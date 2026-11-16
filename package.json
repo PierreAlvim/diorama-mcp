@@ -1,0 +1,63 @@
+{
+  "name": "diorama-mcp",
+  "version": "1.0.0-beta.1",
+  "description": "Diorama: a closed visual vocabulary for coding agents to show and ask inside the chat (MCP Apps)",
+  "scripts": {
+    "build": "npm run build:ui && npm run build:server",
+    "build:ui": "vite build",
+    "build:server": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json && tsc -p tsconfig.scripts.json",
+    "preview": "vite -c vite.playground.config.ts",
+    "test:smoke": "node scripts/smoke.mjs",
+    "build:host": "vite build -c vite.host.config.ts",
+    "test": "npm run build && npm run build:host && npm run build:playground && npm run test:scenarios && npm run test:smoke && npm run test:e2e && npm run test:playground",
+    "test:scenarios": "tsx scripts/check-scenarios.ts",
+    "test:e2e": "tsx scripts/e2e.ts",
+    "docs": "tsx scripts/build-scenarios.mjs",
+    "build:playground": "vite build -c vite.playground.config.ts",
+    "test:playground": "tsx scripts/e2e-playground.ts"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-apps",
+    "model-context-protocol",
+    "agents",
+    "visualization",
+    "diagrams",
+    "copilot"
+  ],
+  "author": "Pierre Alvim de Paula",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@dagrejs/dagre": "^3.1.3",
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "playwright-core": "^1.65.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4"
+  },
+  "private": true,
+  "bin": {
+    "diorama-mcp": "dist/server/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PierreAlvim/diorama-mcp.git"
+  },
+  "homepage": "https://pierrealvim.github.io/diorama-mcp/",
+  "bugs": {
+    "url": "https://github.com/PierreAlvim/diorama-mcp/issues"
+  }
+}

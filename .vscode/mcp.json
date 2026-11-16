@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "diorama": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/server/index.js"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
