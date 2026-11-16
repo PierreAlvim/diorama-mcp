@@ -8,18 +8,27 @@ import { z } from "zod";
 /** Coarse scale on purpose: fine-grained numbers would suggest precision the agent does not have. */
 export const Level = z.enum(["low", "medium", "high"]);
 export const Change = z.enum(["added", "removed", "changed", "affected"]);
-export const Status = z.enum(["ok", "fail", "running", "warn", "pending"]);
+export const Status = z.enum(["ok", "warn", "failed", "pending", "running", "blocked", "skipped"]);
+export const Emphasis = z.enum(["normal", "highlighted", "faded"]);
 
 /**
  * Optional fields accepted on every element of every block.
  * No per-field descriptions: these repeat ~13 times per tool schema, so they are explained once in the tool description (server/index.ts, VOCABULARY).
  */
-const markers = {
-  in: z.array(z.string()).optional(),
-  refs: z.array(z.string()).optional(),
+const props = {
   change: Change.optional(),
   status: Status.optional(),
+  emphasis: Emphasis.optional(),
   note: z.string().optional(),
+};
+const markers = {
+  ...props,
+  /**
+   * State id -> the properties that differ while that state is active.
+   * Typed loosely on purpose: spelling out the four properties again here would repeat them on every element of both tools
+   * (about 11 kB of schema). shared/lint.ts checks keys and values and tells the model exactly what is wrong.
+   */
+  when: z.record(z.string(), z.record(z.string(), z.string())).optional(),
 };
 const blockBase = {
   id: z.string().optional(),
@@ -33,7 +42,7 @@ const CardsBlock = z.object({
   items: z
     .array(
       z.object({
-        id: z.string().describe("Short stable id, e.g. 'queue'. Other blocks reference it through `in`."),
+        id: z.string().describe("Short stable id, e.g. 'queue'. Each card is also a state: other elements use this id as a key of `when`."),
         title: z.string().describe("2-5 words."),
         summary: z.string().optional().describe("One or two sentences."),
         pros: z.array(z.string()).max(5).optional(),
@@ -140,6 +149,7 @@ const TreeBlock = z.object({
 const Cell = z.union([
   z.string(),
   z.object({
+    id: z.string().optional().describe("Only when the cell is something that also appears elsewhere, e.g. the risk listed in another block."),
     v: z.string().describe("Cell text; may be empty."),
     heat: z.number().min(0).max(5).optional().describe("Heat-map intensity, 0-5."),
     ...markers,
@@ -231,9 +241,15 @@ const envelope = {
     .array(z.object({ id: z.string(), label: z.string() }))
     .max(6)
     .optional()
-    .describe("Named perspectives the user can switch between (before/after, happy path/error). Elements opt in through `in`."),
+    .describe("Named states the user can switch between (before/after, happy path/error, 14:10/14:20). Elements say what differs in each through `when`."),
   walkthrough: z
-    .array(z.object({ text: z.string().describe("One or two sentences."), focus: z.array(z.string()).describe("Element or lens ids to highlight during this step.") }))
+    .array(
+      z.object({
+        text: z.string().describe("One or two sentences."),
+        state: z.string().optional().describe("State (lens or card id) to switch to at this step."),
+        focus: z.array(z.string()).optional().describe("Element ids to spotlight during this step: these stay lit, the rest fades."),
+      }),
+    )
     .max(8)
     .optional()
     .describe("Narrated steps over the blocks. Use it to carry an explanation or a conclusion."),
@@ -270,4 +286,9 @@ export type View = z.infer<typeof ViewSchema>;
 export type Decision = z.infer<typeof DecisionSchema>;
 export type Response = z.infer<typeof ResponseSchema>;
 export type DecisionRecord = z.infer<typeof RecordSchema>;
-export type Markers = { in?: string[]; refs?: string[]; change?: Change; status?: Status; note?: string };
+export type Emphasis = z.infer<typeof Emphasis>;
+/** The properties an element can declare, and vary by state. */
+export type Props = { change?: Change; status?: Status; emphasis?: Emphasis; note?: string };
+export type Markers = Props & { when?: Record<string, Record<string, string>> };
+/** The values `when` may set, by property. `note` is free text. */
+export const PROP_VALUES: Record<string, readonly string[] | null> = { change: Change.options, status: Status.options, emphasis: Emphasis.options, note: null };

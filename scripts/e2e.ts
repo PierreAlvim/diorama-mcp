@@ -107,10 +107,11 @@ async function runScenario(n: number, sc: Scenario) {
     assert.ok((await view.locator(".el.off").count()) > 0, "the lens dims other lenses' elements");
   }
   if (doc.walkthrough) {
-    if (sample.lens) await view.getByRole("button", { name: "Next step" }).click(); // resumes at step 1
     for (let i = 0; i < doc.walkthrough.length; i++) {
       assert.ok(await view.getByText(`Step ${i + 1} of ${doc.walkthrough.length}`).isVisible());
-      assert.ok((await view.locator(".el.on").count()) > 0, `walkthrough step ${i + 1} highlights something`);
+      const step: { state?: string; focus?: string[] } = doc.walkthrough[i];
+      if (step.focus?.length) assert.ok((await view.locator(".el.on, .cell.on").count()) > 0, `walkthrough step ${i + 1} highlights something`);
+      if (step.state && doc.lenses?.some((l) => l.id === step.state)) assert.equal(await view.getByRole("button", { name: doc.lenses.find((l) => l.id === step.state)!.label, exact: true }).getAttribute("aria-pressed"), "true", `step ${i + 1} switches the state`);
       if (i < doc.walkthrough.length - 1) await view.getByRole("button", { name: "Next step" }).click();
     }
     for (let i = doc.walkthrough.length - 1; i > (sample.step ?? 0); i--) await view.getByRole("button", { name: "Previous step" }).click();
@@ -197,12 +198,60 @@ const cases: [string, () => Promise<void>][] = [
     assert.ok(await s.view.locator(".footer button.primary").isDisabled());
     await s.page.close();
   }],
-  ["hovering a card switches the lens", async () => {
+  ["a card is a state: hovering previews it, choosing switches to it, and `when` changes properties", async () => {
     const s = await open(1);
-    const node = s.view.locator('[data-id="gw"]');
-    assert.match((await node.getAttribute("class"))!, /\boff\b/, "WS gateway is dimmed while SSE (recommended) is the lens");
+    const node = (id: string) => s.view.locator(`.graph [data-id="${id}"]`);
+    assert.match((await node("gw").getAttribute("class"))!, /\boff\b/, "the WS gateway is faded while SSE (recommended) is the state");
+    assert.equal(await node("api").getAttribute("data-status"), "warn", "in SSE the API pods carry the load");
+    assert.equal(await node("db").getAttribute("data-status"), null);
     await item(s.view, "options", "ws").hover();
-    assert.match((await node.getAttribute("class"))!, /\bon\b/);
+    assert.match((await node("gw").getAttribute("class"))!, /\bon\b/);
+    assert.equal(await node("gw").getAttribute("data-change"), "added");
+    assert.equal(await node("api").getAttribute("data-status"), null, "the warning belongs to SSE only");
+    await item(s.view, "options", "poll").click();
+    await s.view.locator("header h1").hover();
+    assert.equal(await node("db").getAttribute("data-status"), "warn", "the chosen option stays the state after the pointer leaves");
+    assert.match((await node("gw").getAttribute("class"))!, /\boff\b/);
+    await s.page.close();
+  }],
+  ["states are not in play when nothing varies: no card looks active before a choice", async () => {
+    extra.push({ slug: "plain", group: "", title: "", tool: "present_decision", args: { title: "Plain", question: "?", blocks: [{ type: "cards", id: "o", items: [{ id: "a", title: "A", recommended: true }, { id: "b", title: "B" }] }], response: { type: "choose_one", of: "o" } } });
+    const s = await open(-extra.length);
+    assert.equal(await s.view.locator(".el.on, .el.off").count(), 0);
+    await s.page.close();
+  }],
+  ["a walkthrough step switches the state and spotlights; the lens chips stay usable", async () => {
+    extra.push({ slug: "story", group: "", title: "", tool: "present_view", args: {
+      title: "Story",
+      lenses: [{ id: "t1", label: "14:10" }, { id: "t2", label: "14:20" }],
+      blocks: [{ type: "steps", numbered: false, items: [
+        { id: "api", label: "API", status: "ok", when: { t2: { status: "failed", note: "pool exhausted" } } },
+        { id: "db", label: "Database", status: "ok", when: { t2: { status: "warn" } } },
+      ] }],
+      walkthrough: [{ text: "All healthy.", state: "t1" }, { text: "The pool runs out.", state: "t2", focus: ["api"] }],
+    } });
+    const s = await open(-extra.length);
+    const el = (id: string) => s.view.locator(`[data-id="${id}"]`);
+    const chip = (name: string) => s.view.getByRole("button", { name, exact: true });
+    assert.equal(await el("api").getAttribute("data-status"), "ok");
+    assert.equal(await s.view.locator(".el.off").count(), 0, "a step without focus spotlights nothing");
+    await s.view.getByRole("button", { name: "Next step" }).click();
+    assert.equal(await el("api").getAttribute("data-status"), "failed");
+    assert.equal(await chip("14:20").getAttribute("aria-pressed"), "true");
+    await s.view.getByText("pool exhausted").waitFor();
+    assert.match((await el("api").getAttribute("class"))!, /\bon\b/);
+    assert.match((await el("db").getAttribute("class"))!, /\boff\b/);
+    await chip("14:10").click();
+    assert.equal(await el("api").getAttribute("data-status"), "ok", "the user can look at another state without leaving the step");
+    assert.ok(await s.view.getByText("Step 2 of 2").isVisible());
+    await s.page.close();
+  }],
+  ["equal ids highlight each other on hover, without fading what the agent highlighted", async () => {
+    const n = scenarios.findIndex((x) => x.slug === "risk-assessment") + 1;
+    const s = await open(n);
+    await s.view.locator('.b-steps [data-id="r1"]').hover();
+    assert.match((await s.view.locator('td[data-id="r1"]').getAttribute("class"))!, /\bon\b/);
+    assert.match((await s.view.locator('.b-steps [data-id="r2"]').getAttribute("class"))!, /\boff\b/);
     await s.page.close();
   }],
   ["approve all", async () => {
@@ -223,12 +272,13 @@ const cases: [string, () => Promise<void>][] = [
     await s.page.close();
   }],
   ["server rejects dangling references and the view says so", async () => {
-    extra.push({ slug: "bad", group: "", title: "", tool: "present_decision", args: { title: "Bad", question: "?", blocks: [{ type: "graph", nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }], edges: [{ from: "a", to: "zzz" }] }], response: { type: "choose_one", of: "nope" } } });
+    extra.push({ slug: "bad", group: "", title: "", tool: "present_decision", args: { title: "Bad", question: "?", blocks: [{ type: "graph", nodes: [{ id: "a", label: "A", when: { ghost: { status: "ok" } } }, { id: "b", label: "B" }], edges: [{ from: "a", to: "zzz" }] }], response: { type: "choose_one", of: "nope" } } });
     const s = await open(-extra.length);
     const result = (await s.host()).toolResult as { isError?: boolean; content: { text: string }[] };
     assert.ok(result.isError);
     assert.match(result.content[0].text, /unknown node "zzz"/);
     assert.match(result.content[0].text, /no block has id "nope"/);
+    assert.match(result.content[0].text, /when: "ghost" is not a state\. This view has no states/);
     await s.view.getByText("The view was rejected by the server").waitFor();
     await s.page.close();
   }],

@@ -1,4 +1,5 @@
-import type { Block, Decision, View } from "./schema.js";
+import { elements, states } from "./state.js";
+import { PROP_VALUES, type Block, type Decision, type View } from "./schema.js";
 
 /** Items of a block the user can answer on, for `response.of`. */
 export function answerables(block: Block, depth = 1): { id: string; label: string }[] {
@@ -95,8 +96,25 @@ export function lint(view: View | Decision): string[] {
       for (const s of b.series) if (s.values.length !== b.categories.length) out.push(`${at}: series "${s.id}" has ${s.values.length} values for ${b.categories.length} categories.`);
     }
   });
+  const known = states(view);
+  const stateIds = new Set(known.map((x) => x.id));
+  const hint = known.length ? `States are the lens and card ids: ${known.map((x) => x.id).join(", ")}.` : "This view has no states: declare `lenses` or a cards block.";
+  const unknown = new Set<string>();
+  const badProps = new Set<string>();
+  for (const el of elements(view))
+    for (const [state, over] of Object.entries(el.when ?? {})) {
+      if (!stateIds.has(state)) unknown.add(state);
+      for (const [prop, value] of Object.entries(over)) {
+        const allowed = PROP_VALUES[prop];
+        if (allowed === undefined) badProps.add(`when: "${prop}" cannot vary by state. Only ${Object.keys(PROP_VALUES).join(", ")} can.`);
+        else if (allowed && !allowed.includes(value)) badProps.add(`when: ${prop} "${value}" is not one of ${allowed.join(", ")}.`);
+      }
+    }
+  for (const k of unknown) out.push(`when: "${k}" is not a state. ${hint}`);
+  out.push(...badProps);
   (view.walkthrough ?? []).forEach((w, i) => {
-    for (const f of w.focus) if (!ids.has(f)) out.push(`walkthrough[${i}]: focus references unknown id "${f}".`);
+    if (w.state !== undefined && !stateIds.has(w.state)) out.push(`walkthrough[${i}]: state "${w.state}" is not a state. ${hint}`);
+    for (const f of w.focus ?? []) if (!ids.has(f)) out.push(`walkthrough[${i}]: focus references unknown id "${f}".`);
   });
 
   if ("response" in view) {

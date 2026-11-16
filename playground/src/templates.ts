@@ -103,5 +103,25 @@ export const BLOCK_TYPES = Object.keys(TEMPLATES) as Block["type"][];
 
 export const STARTERS: Record<PresentTool, unknown> = {
   present_view: { title: "New view", context: "One to three sentences of background.", blocks: [TEMPLATES.graph] },
-  present_decision: { title: "New decision", question: "Which option do we go with?", blocks: [TEMPLATES.cards], response: { type: "choose_one", of: "options" } },
+  present_decision: {
+    title: "New decision",
+    question: "Which option do we go with?",
+    blocks: [
+      TEMPLATES.cards,
+      {
+        type: "graph",
+        nodes: [
+          { id: "d-app", label: "App" },
+          { id: "d-new", label: "New service", emphasis: "faded", when: { "opt-b": { emphasis: "highlighted", change: "added" } } },
+          { id: "d-db", label: "Database", when: { "opt-a": { status: "warn", note: "takes the extra load" } } },
+        ],
+        edges: [
+          { from: "d-app", to: "d-db" },
+          { from: "d-app", to: "d-new", emphasis: "faded", when: { "opt-b": { emphasis: "highlighted" } } },
+          { from: "d-new", to: "d-db", emphasis: "faded", when: { "opt-b": { emphasis: "highlighted" } } },
+        ],
+      },
+    ],
+    response: { type: "choose_one", of: "options" },
+  },
 };

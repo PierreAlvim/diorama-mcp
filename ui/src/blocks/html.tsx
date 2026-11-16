@@ -32,9 +32,9 @@ export function Cards({ block }: { block: BlockOf<"cards"> }) {
 }
 
 export function Tradeoff({ block }: { block: BlockOf<"tradeoff"> }) {
-  const { activeLens, color, bind } = useView();
+  const { activeState, color, bind } = useView();
   const items = block.items;
-  const activeId = items.some((i) => i.id === activeLens) ? activeLens! : items[0].id;
+  const activeId = items.some((i) => i.id === activeState) ? activeState! : items[0].id;
   const score = (item: string, axis: string) => block.scores.find((s) => s.item === item && s.axis === axis);
   const n = block.axes.length;
   const size = 220, c = size / 2, r = 84;
@@ -148,7 +148,7 @@ export function Matrix({ block }: { block: BlockOf<"matrix"> }) {
                 const b = typeof cell === "string" ? null : bind(c);
                 // A row that is itself highlighted keeps its cells readable; a highlighted cell lifts its dimmed row.
                 return (
-                  <td key={i} className={`cell ${b && b.className.includes(" on") ? "on" : ""}`} data-change={c.change} data-status={c.status} data-heat={c.heat ? Math.round(c.heat) : undefined} title={c.note} onMouseEnter={b?.onMouseEnter} onMouseLeave={b?.onMouseLeave}>
+                  <td key={i} data-id={b?.["data-id"]} className={`cell ${b && b.className.includes(" on") ? "on" : ""}`} data-change={c.change} data-status={c.status} data-heat={c.heat ? Math.round(c.heat) : undefined} title={c.note} onMouseEnter={b?.onMouseEnter} onMouseLeave={b?.onMouseLeave}>
                     {c.v === "" && c.status ? <span className="dot" data-status={c.status} /> : c.v}
                   </td>
                 );
@@ -240,7 +240,7 @@ export function Quadrant({ block }: { block: BlockOf<"quadrant"> }) {
 }
 
 export function Timeline({ block }: { block: BlockOf<"timeline"> }) {
-  const { bind } = useView();
+  const { bind, activeState } = useView();
   const rows = block.tracks.map((t) => {
     let cur = 0;
     return { t, phases: t.phases.map((p) => { const start = p.start ?? cur; cur = start + p.duration; return { p, start }; }), end: cur };
@@ -269,8 +269,8 @@ export function Timeline({ block }: { block: BlockOf<"timeline"> }) {
                 {ticks.map((k) => <i key={k.at} className="tl-grid" style={{ left: pct(k.at) }} />)}
                 {global.map((e, i) => <i key={i} className="tl-grid strong" style={{ left: pct(e.at) }} />)}
                 {phases.map(({ p, start }, i) => {
-                  // A phase inherits its track's lenses and colour unless it declares its own.
-                  const b = bind({ ...p, in: p.in ?? t.in }, { label: p.label });
+                  // A phase inherits its track's emphasis and colour unless it declares its own.
+                  const b = bind({ ...p, emphasis: p.emphasis ?? t.emphasis ?? (t.id === activeState ? "highlighted" : undefined) }, { label: p.label });
                   return <span key={i} {...b} className={b.className + " tl-phase"} style={{ ...tb.style, left: pct(start), width: pct(p.duration) }} title={`${p.label}: ${p.duration} ${block.unit ?? ""}${p.note ? ` (${p.note})` : ""}`}><Mark el={p.status ? { status: p.status } : {}} />{p.label}</span>;
                 })}
                 {events.map((e, i) => <span key={i} {...withClass(bind(e, { label: e.label }), e.at > end * 0.8 ? "tl-event flip" : "tl-event")} style={e.at > end * 0.8 ? { right: pct(end - e.at) } : { left: pct(e.at) }} title={e.note}><i />{e.label}</span>)}

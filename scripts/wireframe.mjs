@@ -6,11 +6,14 @@ import dagre from "@dagrejs/dagre";
 
 const W = 760;
 const PAD = 20;
+import { applyState, initialState, stateful, states } from "../shared/state.ts";
+import { emphasis } from "../ui/src/model.ts";
+
 const C = {
   ink: "#1f2328", mute: "#6b7280", line: "#c5cad3", soft: "#f4f5f7", bg: "#ffffff",
   accent: "#2f6fde", accentSoft: "#e3edfd",
   added: "#2e9e5b", removed: "#d14b4b", changed: "#c98a1b", affected: "#7a5cd6",
-  ok: "#2e9e5b", fail: "#d14b4b", running: "#2f6fde", warn: "#c98a1b", pending: "#9aa1ac",
+  ok: "#2e9e5b", failed: "#d14b4b", running: "#2f6fde", warn: "#c98a1b", pending: "#9aa1ac", blocked: "#7c5cc4", skipped: "#9aa1ac",
 };
 const GLYPH = { added: "+", removed: "−", changed: "~", affected: "!" };
 
@@ -53,20 +56,8 @@ function arrowHead(x1, y1, x2, y2, color) {
   return `<polygon points="${r(x2)},${r(y2)} ${p(0.4)} ${p(-0.4)}" fill="${color}"/>`;
 }
 
-// 'on' = highlighted, 'off' = dimmed, 'neutral' = untouched
-function emph(el, ctx, isEdge) {
-  if (ctx.focus) {
-    if ((el.in ?? []).some((l) => ctx.focus.has(l)) || (ctx.hover && (el.refs ?? []).includes(ctx.hover))) return "on";
-    if (isEdge) return ctx.focus.has(el.from) && ctx.focus.has(el.to) ? "on" : "off";
-    return ctx.focus.has(el.id) ? "on" : "off";
-  }
-  if (ctx.lens) {
-    if (el.id === ctx.lens) return "on";
-    if (!el.in) return "neutral";
-    return el.in.includes(ctx.lens) ? "on" : "off";
-  }
-  return "neutral";
-}
+// 'on' = highlighted, 'off' = dimmed, 'neutral' = untouched. Same rule as the view (ui/src/model.ts).
+const emph = (el, ctx, isEdge) => emphasis(el, ctx.fx, isEdge);
 function look(el, ctx, isEdge) {
   const e = emph(el, ctx, isEdge);
   const mk = el.change ? C[el.change] : el.status ? C[el.status] : null;
@@ -109,7 +100,7 @@ function control(x, y, type, pick) {
   return {
     w: 40,
     s: rect(x, y - 7, 15, 14, { rx: 3, stroke: ok ? C.ok : C.line, fill: ok ? C.ok : C.bg }) + text(x + 7.5, y + 4, "✓", { size: 10, fill: ok ? "#fff" : C.mute, anchor: "middle", bold: true }) +
-      rect(x + 18, y - 7, 15, 14, { rx: 3, stroke: no ? C.fail : C.line, fill: no ? C.fail : C.bg }) + text(x + 25.5, y + 4, "✗", { size: 10, fill: no ? "#fff" : C.mute, anchor: "middle", bold: true }),
+      rect(x + 18, y - 7, 15, 14, { rx: 3, stroke: no ? C.failed : C.line, fill: no ? C.failed : C.bg }) + text(x + 25.5, y + 4, "✗", { size: 10, fill: no ? "#fff" : C.mute, anchor: "middle", bold: true }),
   };
 }
 const pickOf = (ctx, type, blockId, id) => {
@@ -269,7 +260,7 @@ B.timeline = (b, x, y, w, ctx) => {
     const by = ry + rowH - 25;
     s += `<g>` + text(x, by + 14, fit(t.label, lab - 8), { bold: lt.e === "on", fill: lt.e === "on" ? C.accent : C.ink, opacity: ctx.focus ? 1 : lt.opacity });
     for (const p of phases) {
-      const lk = look({ ...p, in: p.in ?? t.in, id: p.id ?? t.id }, ctx), pw = Math.max(3, p.duration * k - 2);
+      const lk = look({ ...p, emphasis: p.emphasis ?? t.emphasis, id: p.id ?? t.id }, ctx), pw = Math.max(3, p.duration * k - 2);
       s += `<g opacity="${lk.opacity}">` + rect(X(p.st), by, pw, 20, { stroke: lk.stroke, sw: lk.sw, fill: lk.mk ?? (lk.e === "on" ? C.accent : C.soft), fillOpacity: lk.mk ? 0.18 : lk.e === "on" ? 0.14 : 1 }) +
         (pw > 22 ? text(X(p.st) + 6, by + 14, fit(p.label, pw - 8, 10), { size: 10 }) : "") + `</g>`;
     }
@@ -329,7 +320,7 @@ B.matrix = (b, x, y, w, ctx) => {
   cols.forEach((c, i) => { s += text(x + cw0 + lab + i * colW + colW / 2, y + 17, fit(c.label, colW - 6, 10.5), { size: 10.5, bold: true, anchor: "middle" }); });
   b.rows.forEach((row, ri) => {
     const ry = y + hh + ri * rh, lk = look(row, ctx);
-    const cellHit = (c) => ctx.hover && typeof c === "object" && c !== null && (c.refs ?? []).includes(ctx.hover);
+    const cellHit = (c) => ctx.hover && typeof c === "object" && c !== null && c.id === ctx.hover;
     if (row.cells.some(cellHit)) { lk.opacity = 1; lk.e = "neutral"; }
     s += line(x, ry, x + w, ry) + `<g opacity="${lk.opacity}">`;
     if (lk.e === "on") s += rect(x, ry + 1, w, rh - 1, { stroke: "none", fill: C.accentSoft });
@@ -340,7 +331,7 @@ B.matrix = (b, x, y, w, ctx) => {
     row.cells.forEach((cell, ci) => {
       const c = typeof cell === "object" && cell !== null ? cell : { v: cell };
       const cx = x + cw0 + lab + ci * colW, mk = c.change ? C[c.change] : c.status ? C[c.status] : null;
-      if (c.heat) s += rect(cx + 1, ry + 1, colW - 2, rh - 2, { stroke: "none", fill: C.fail, fillOpacity: Math.min(0.85, c.heat * 0.17), rx: 2 });
+      if (c.heat) s += rect(cx + 1, ry + 1, colW - 2, rh - 2, { stroke: "none", fill: C.failed, fillOpacity: Math.min(0.85, c.heat * 0.17), rx: 2 });
       if (mk) s += rect(cx + 2, ry + 2, colW - 4, rh - 4, { stroke: mk, fill: mk, fillOpacity: 0.12, rx: 3, dash: c.change === "removed" ? "3 2" : null });
       const v = c.v ?? "";
       if (cellHit(c)) s += rect(cx + 2, ry + 2, colW - 4, rh - 4, { stroke: C.accent, sw: 2.2, fill: "none", rx: 3 });
@@ -415,7 +406,7 @@ B.board = (b, x, y, w, ctx) => {
   let s = "";
   b.columns.forEach((col, ci) => {
     const cx = x + ci * (cw + gap);
-    s += rect(cx, y, cw, h, { fill: C.soft, stroke: "none", rx: 6 }) + text(cx + 8, y + 18, fit(col.label, cw - 40, 10.5), { size: 10.5, bold: true }) + text(cx + cw - 8, y + 18, String(col.items.length) + (col.limit ? `/${col.limit}` : ""), { size: 10, fill: col.limit && col.items.length > col.limit ? C.fail : C.mute, anchor: "end", bold: !!(col.limit && col.items.length > col.limit) });
+    s += rect(cx, y, cw, h, { fill: C.soft, stroke: "none", rx: 6 }) + text(cx + 8, y + 18, fit(col.label, cw - 40, 10.5), { size: 10.5, bold: true }) + text(cx + cw - 8, y + 18, String(col.items.length) + (col.limit ? `/${col.limit}` : ""), { size: 10, fill: col.limit && col.items.length > col.limit ? C.failed : C.mute, anchor: "end", bold: !!(col.limit && col.items.length > col.limit) });
     col.items.forEach((it, i) => {
       const iy = y + 28 + i * (ch + 6), lk = look(it, ctx);
       s += `<g opacity="${lk.opacity}">` + rect(cx + 5, iy, cw - 10, ch, { stroke: lk.stroke, sw: lk.sw, fill: lk.e === "on" ? C.accentSoft : C.bg }) +
@@ -452,14 +443,14 @@ function findById(node, id) {
 
 // ---- frame -------------------------------------------------------------
 export function renderWireframe(sc) {
-  const a = sc.args, sample = sc.sample ?? {}, isDecision = sc.tool === "present_decision";
-  const ctx = { lens: sample.lens ?? null, focus: null, resp: a.response, sample };
-  if (a.walkthrough && sample.step != null) { ctx.focus = new Set(a.walkthrough[sample.step].focus); ctx.lens = null; }
-  if (sample.hover) {
-    const el = findById(a.blocks, sample.hover);
-    ctx.focus = new Set([sample.hover, ...(el?.refs ?? [])]);
-    ctx.hover = sample.hover;
-  }
+  const sample = sc.sample ?? {}, isDecision = sc.tool === "present_decision";
+  const step = sc.args.walkthrough && sample.step != null ? sc.args.walkthrough[sample.step] : null;
+  // The same two axes as the view: the active state decides what each element is, the spotlight where to look.
+  const known = new Set(stateful(sc.args) ? states(sc.args).map((x) => x.id) : []);
+  const state = sample.lens ?? (known.has(sample.pick) ? sample.pick : null) ?? step?.state ?? initialState(sc.args);
+  const a = applyState(sc.args, state);
+  const spot = sample.hover ? { ids: new Set([sample.hover]), strict: false } : step?.focus?.length ? { ids: new Set(step.focus), strict: true } : undefined;
+  const ctx = { lens: state, focus: spot?.ids ?? null, hover: sample.hover, fx: { state, spot }, resp: a.response, sample };
   const iw = W - PAD * 2;
   let s = "", y = 0;
 
@@ -481,7 +472,7 @@ export function renderWireframe(sc) {
     let lx = PAD;
     s += text(lx, y + 14, "Lens:", { size: 10, fill: C.mute }); lx += 34;
     for (const l of a.lenses) {
-      const on = l.id === ctx.lens && !ctx.focus, pw = l.label.length * 6.1 + 20;
+      const on = l.id === ctx.lens, pw = l.label.length * 6.1 + 20;
       s += rect(lx, y, pw, 20, { rx: 10, stroke: on ? C.accent : C.line, fill: on ? C.accent : C.bg }) + text(lx + pw / 2, y + 14, l.label, { size: 10.5, anchor: "middle", fill: on ? "#fff" : C.ink, bold: on });
       lx += pw + 6;
     }

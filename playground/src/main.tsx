@@ -4,7 +4,8 @@ import { z } from "zod";
 import a from "../../docs/scenarios/data-a.mjs";
 import b from "../../docs/scenarios/data-b.mjs";
 import { check, type Outcome, type PresentTool } from "../../shared/present";
-import { DecisionSchema, ViewSchema, type DecisionRecord } from "../../shared/schema";
+import { DecisionSchema, ViewSchema, type DecisionRecord, type View } from "../../shared/schema";
+import { states } from "../../shared/state";
 import { SchemaForm, type JS } from "./Form";
 import type { FromFrame, ToFrame } from "./protocol";
 import { pack, unpack } from "./share";
@@ -38,6 +39,15 @@ function parse(text: string): Parsed {
     return { ok: true, call: { tool: name, arguments: raw.arguments } };
   }
   return { ok: true, call: { tool: "response" in raw ? "present_decision" : "present_view", arguments: raw } };
+}
+
+/** Lens and card ids of whatever is in the editor, valid or not, to suggest as `when` keys. */
+function stateIds(args: unknown): string[] {
+  try {
+    return states(args as View).map((s) => s.id);
+  } catch {
+    return [];
+  }
 }
 
 function scenarioCall(i: number): Call {
@@ -192,7 +202,7 @@ function Playground() {
           {tab === "json" ? (
             <textarea className="json" aria-label="Tool call JSON" spellCheck={false} value={text} onChange={(e) => (setText(e.target.value), setSource(""), setShared(""))} />
           ) : parsed.ok ? (
-            <SchemaForm schema={SCHEMAS[parsed.call.tool]} value={parsed.call.arguments} onChange={(v) => edit({ ...parsed.call, arguments: v })} errors={errors} templates={TEMPLATES} />
+            <SchemaForm schema={SCHEMAS[parsed.call.tool]} value={parsed.call.arguments} onChange={(v) => edit({ ...parsed.call, arguments: v })} errors={errors} templates={TEMPLATES} states={stateIds(parsed.call.arguments)} />
           ) : (
             <p className="muted pad">The JSON does not parse, so there is nothing to build a form from. Fix it in the JSON tab.</p>
           )}

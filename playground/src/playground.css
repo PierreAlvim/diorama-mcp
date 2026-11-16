@@ -82,6 +82,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .form .tag { flex: none; width: auto; padding: 2px 6px; font-size: 12px; }
 .form .arr { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 2px solid var(--line); }
 .form .row { display: flex; }
+.form .entry { display: grid; grid-template-columns: minmax(90px, 140px) minmax(0, 1fr); gap: 8px; align-items: start; }
+.form .entry .key { font-family: var(--mono); font-size: 12px; }
 .form .row .prim { flex: 1; }
 .form details { border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
 .form details.bad { border-color: var(--bad); }

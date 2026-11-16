@@ -1,3 +1,4 @@
+import { PROP_VALUES } from "../../shared/schema";
 import { createContext, useContext, type ReactNode } from "react";
 
 /**
@@ -10,6 +11,9 @@ export interface JS {
   properties?: Record<string, JS>;
   required?: string[];
   items?: JS;
+  /** A record: any key, every value of this shape (`when`). */
+  additionalProperties?: JS | boolean;
+  propertyNames?: JS;
   enum?: (string | number)[];
   const?: unknown;
   oneOf?: JS[];
@@ -26,17 +30,19 @@ interface FormCtx {
   errors: Set<string>;
   /** Ready-made values for members of a discriminated union, by discriminator value. */
   templates: Record<string, unknown>;
+  /** Ids that are valid keys of `when`, offered when adding an entry. */
+  states: string[];
 }
-const Ctx = createContext<FormCtx>({ errors: new Set(), templates: {} });
+const Ctx = createContext<FormCtx>({ errors: new Set(), templates: {}, states: [] });
 
 /** Marker fields carry no description in the schema (they would repeat on every element), so the form explains them once. */
 const HINTS: Record<string, string> = {
-  in: "Lens or card ids this element belongs to. Leave out for elements common to all.",
-  refs: "Ids of related elements in other blocks; focusing one highlights the others.",
-  change: "Diff marker.",
-  status: "State marker.",
+  change: "What happened to it.",
+  status: "How it is doing.",
+  emphasis: "How much it stands out. Leave out for normal.",
   note: "One short line shown next to the element.",
-  id: "Ids are global: the same id in two blocks means the same thing.",
+  when: "What differs while a state is active. Keys are state ids: lens ids and card ids.",
+  id: "Ids are global: the same id in two blocks means the same thing, and they highlight together on hover.",
 };
 
 type Obj = Record<string, unknown>;
@@ -79,6 +85,17 @@ const isSimple = (s: JS, value: unknown): boolean => {
   const v = pick(s, value);
   return v.type !== "object" && v.type !== "array";
 };
+const isRecord = (s: JS): s is JS & { additionalProperties: JS } => typeof s.additionalProperties === "object" && !s.properties;
+/**
+ * `when` is declared as a map of string maps to keep the tool schema small. Its entries override the element's own simple properties,
+ * so the form edits them with those properties' schemas (same dropdowns), all optional.
+ */
+function overrides(s: JS & { additionalProperties: JS }, siblings?: Record<string, JS>): (JS & { additionalProperties: JS }) | null {
+  const inner = s.additionalProperties;
+  if (!siblings || inner.type !== "object" || inner.properties || typeof inner.additionalProperties !== "object") return null;
+  const properties = Object.fromEntries(Object.entries(siblings).filter(([k]) => k in PROP_VALUES));
+  return { ...s, additionalProperties: { type: "object", properties } };
+}
 const at = (path: string, key: string | number) => (typeof key === "number" ? `${path}[${key}]` : path ? `${path}.${key}` : key);
 
 function summary(v: unknown): string {
@@ -105,7 +122,7 @@ function Primitive({ schema, value, onChange, path }: { schema: JS; value: unkno
 }
 
 /** One value of any shape. `tools` are the buttons the parent wants next to it (remove, move). */
-function Field({ schema, value, onChange, path, tools }: { schema: JS; value: unknown; onChange: (v: unknown) => void; path: string; tools?: ReactNode }) {
+function Field({ schema, value, onChange, path, tools, siblings }: { schema: JS; value: unknown; onChange: (v: unknown) => void; path: string; tools?: ReactNode; siblings?: Record<string, JS> }) {
   const { templates } = useContext(Ctx);
   const all = variants(schema);
   const chosen = pick(schema, value);
@@ -134,6 +151,7 @@ function Field({ schema, value, onChange, path, tools }: { schema: JS; value: un
     );
   }
 
+  if (chosen.type === "object" && isRecord(chosen)) return <RecordField schema={overrides(chosen, siblings) ?? chosen} value={isObj(value) ? value : {}} onChange={onChange} path={path} head={<>{switcher}{tools}</>} />;
   if (chosen.type === "object") return <ObjectField schema={chosen} value={isObj(value) ? value : {}} onChange={onChange} path={path} head={<>{switcher}{tools}</>} />;
   if (chosen.type === "array") return <ArrayField schema={chosen} value={Array.isArray(value) ? value : []} onChange={onChange} path={path} head={<>{switcher}{tools}</>} />;
   return <span className="prim"><Primitive schema={chosen} value={value} onChange={onChange} path={path} />{switcher}{tools}</span>;
@@ -172,7 +190,7 @@ function ObjectField({ schema, value, onChange, path, head }: { schema: JS; valu
       {shown.filter(([k, s]) => !isSimple(s, value[k])).map(([k, s]) => (
         <section key={k} className="group">
           <header><span className="k">{k}{required.has(k) && <i>*</i>}</span>{hint(k, s) && <span className="hint">{hint(k, s)}</span>}</header>
-          <Field schema={s} value={value[k]} onChange={(v) => set(k, v)} path={at(path, k)} tools={remove(k)} />
+          <Field schema={s} value={value[k]} onChange={(v) => set(k, v)} path={at(path, k)} tools={remove(k)} siblings={schema.properties} />
         </section>
       ))}
       {absent.length > 0 && (
@@ -180,6 +198,31 @@ function ObjectField({ schema, value, onChange, path, head }: { schema: JS; valu
           {absent.map(([k, s]) => <button key={k} type="button" className="chip" title={hint(k, s)} onClick={() => set(k, initial(s, templates))}>+ {k}</button>)}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A map from free keys to values of one shape. Keys are edited in place; an empty key is where a new entry starts. */
+function RecordField({ schema, value, onChange, path, head }: { schema: JS & { additionalProperties: JS }; value: Obj; onChange: (v: unknown) => void; path: string; head?: ReactNode }) {
+  const { templates, states } = useContext(Ctx);
+  const item = schema.additionalProperties;
+  const keys = Object.keys(value);
+  const rename = (from: string, to: string) => onChange(Object.fromEntries(Object.entries(value).map(([k, v]) => [k === from ? to : k, v])));
+  const free = states.filter((s) => !(s in value));
+  return (
+    <div className="arr rec" data-path={path}>
+      {head && <div className="head">{head}</div>}
+      {keys.map((k) => (
+        <div key={keys.indexOf(k)} className="entry">
+          <span className="prim">
+            <input type="text" className="key" aria-label="State id" list={states.length ? "pg-states" : undefined} value={k} onChange={(e) => !(e.target.value in value) && rename(k, e.target.value)} />
+            <button type="button" className="x" title="Remove" aria-label={`Remove ${k}`} onClick={() => onChange(Object.fromEntries(Object.entries(value).filter(([x]) => x !== k)))}>×</button>
+          </span>
+          <Field schema={item} value={value[k]} onChange={(v) => onChange({ ...value, [k]: v })} path={at(path, k)} />
+        </div>
+      ))}
+      {states.length > 0 && <datalist id="pg-states">{states.map((s) => <option key={s} value={s} />)}</datalist>}
+      <button type="button" className="add" disabled={"" in value} onClick={() => onChange({ ...value, [free[0] ?? ""]: initial(item, templates) })}>+ state</button>
     </div>
   );
 }
@@ -229,9 +272,9 @@ function ArrayField({ schema, value, onChange, path, head }: { schema: JS; value
   );
 }
 
-export function SchemaForm({ schema, value, onChange, errors, templates }: { schema: JS; value: unknown; onChange: (v: unknown) => void; errors: Set<string>; templates: Record<string, unknown> }) {
+export function SchemaForm({ schema, value, onChange, errors, templates, states = [] }: { schema: JS; value: unknown; onChange: (v: unknown) => void; errors: Set<string>; templates: Record<string, unknown>; states?: string[] }) {
   return (
-    <Ctx.Provider value={{ errors, templates }}>
+    <Ctx.Provider value={{ errors, templates, states }}>
       <div className="form"><ObjectField schema={schema} value={isObj(value) ? value : {}} onChange={onChange} path="" /></div>
     </Ctx.Provider>
   );

@@ -1,4 +1,4 @@
-// Scenario catalogue, part B. Prose in pt-BR (discovery), payloads in English.
+// Scenario catalogue. Prose in pt-BR (discovery), payloads in English.
 // `args` is the tool call; `sample` is the example state used by wireframes and e2e tests (never sent by the agent).
 export default [
   {
@@ -47,7 +47,7 @@ export default [
     "situation": "O agente vai implementar permissões por papel. A especificação cobre a maioria dos casos, mas deixa combinações em aberto.",
     "why": "Uma tabela de decisão expõe as lacunas: cada célula vazia é uma pergunta que o texto da especificação escondia.",
     "shows": "A matriz papel × ação com o que a especificação define e as células em aberto, e a lista das combinações que precisam de resposta.",
-    "interaction": "Marcar quais combinações em aberto devem ser permitidas; cada item destaca a célula correspondente.",
+    "interaction": "Marcar quais combinações em aberto devem ser permitidas; a célula e o item têm o mesmo id e se destacam juntos.",
     "sources": ["especificação / ticket","leitura do código"],
     "mechanisms": ["destaque ligado","resposta `choose_many`"],
     "tool": "present_decision",
@@ -87,8 +87,8 @@ export default [
                 {"v":"allow","status":"ok"},
                 {"v":"allow","status":"ok"},
                 {"v":"allow","status":"ok"},
-                {"v":"?","status":"warn","refs":["q1"]},
-                {"v":"deny","status":"fail"}
+                {"id":"q1","v":"?","status":"warn"},
+                {"v":"deny","status":"failed"}
               ]
             },
             {
@@ -97,10 +97,10 @@ export default [
               "cells": [
                 {"v":"allow","status":"ok"},
                 {"v":"allow","status":"ok"},
-                {"v":"?","status":"warn","refs":["q2"]},
-                {"v":"?","status":"warn","refs":["q3"]},
-                {"v":"deny","status":"fail"},
-                {"v":"deny","status":"fail"}
+                {"id":"q2","v":"?","status":"warn"},
+                {"id":"q3","v":"?","status":"warn"},
+                {"v":"deny","status":"failed"},
+                {"v":"deny","status":"failed"}
               ]
             },
             {
@@ -108,11 +108,11 @@ export default [
               "label": "Guest",
               "cells": [
                 {"v":"allow","status":"ok"},
-                {"v":"deny","status":"fail"},
-                {"v":"deny","status":"fail"},
-                {"v":"?","status":"warn","refs":["q4"]},
-                {"v":"deny","status":"fail"},
-                {"v":"deny","status":"fail"}
+                {"v":"deny","status":"failed"},
+                {"v":"deny","status":"failed"},
+                {"id":"q4","v":"?","status":"warn"},
+                {"v":"deny","status":"failed"},
+                {"v":"deny","status":"failed"}
               ]
             }
           ]
@@ -157,10 +157,10 @@ export default [
           "rows": [
             {"id":"b1","label":"Full refund within 30 days","cells":[{"v":"✓","status":"ok"},{"v":"✓","status":"ok"},{"v":"✓","status":"ok"}]},
             {"id":"b2","label":"Partial refund of one line item","cells":[{"v":"✓","status":"ok"},{"v":"✓","status":"ok"},{"v":"–"}]},
-            {"id":"b3","label":"Refund after 30 days is rejected","cells":[{"v":"gap","status":"fail"},{"v":"gap","status":"fail"},{"v":"–"}]},
-            {"id":"b4","label":"Refund when the provider times out","cells":[{"v":"–"},{"v":"gap","status":"fail"},{"v":"–"}]},
+            {"id":"b3","label":"Refund after 30 days is rejected","cells":[{"v":"gap","status":"failed"},{"v":"gap","status":"failed"},{"v":"–"}]},
+            {"id":"b4","label":"Refund when the provider times out","cells":[{"v":"–"},{"v":"gap","status":"failed"},{"v":"–"}]},
             {"id":"b5","label":"Refund restores stock","cells":[{"v":"✓","status":"ok"},{"v":"gap","status":"warn"},{"v":"–"}]},
-            {"id":"b6","label":"Two refunds for the same order at once","cells":[{"v":"–"},{"v":"gap","status":"fail"},{"v":"–"}]}
+            {"id":"b6","label":"Two refunds for the same order at once","cells":[{"v":"–"},{"v":"gap","status":"failed"},{"v":"–"}]}
           ]
         }
       ],
@@ -177,7 +177,7 @@ export default [
     "shows": "O grafo de commits das branches envolvidas, com lentes para os commits que faltam na release e os que tocam os mesmos arquivos.",
     "interaction": "Alternar a lente; clicar num commit pergunta sobre ele.",
     "sources": ["`git log --graph`","`git cherry`","`git diff --stat`"],
-    "mechanisms": ["lentes","perguntar sobre isto"],
+    "mechanisms": ["estados (lentes)","perguntar sobre isto"],
     "tool": "present_view",
     "args": {
       "title": "release/2.4 vs main",
@@ -191,12 +191,19 @@ export default [
           "nodes": [
             {"id":"c1","label":"a1f3","lane":"main","note":"base"},
             {"id":"c2","label":"b72c","lane":"main","note":"feat: filters"},
-            {"id":"r1","label":"e901","lane":"rel","note":"bump 2.4.0","in":["overlap"]},
-            {"id":"c3","label":"c9d0","lane":"main","note":"fix: tax rounding","in":["missing","overlap"]},
+            {"id":"r1","label":"e901","lane":"rel","note":"bump 2.4.0","emphasis":"faded","when":{"overlap":{"emphasis":"highlighted"}}},
+            {
+              "id": "c3",
+              "label": "c9d0",
+              "lane": "main",
+              "note": "fix: tax rounding",
+              "emphasis": "faded",
+              "when": {"missing":{"emphasis":"highlighted"},"overlap":{"emphasis":"highlighted"}}
+            },
             {"id":"f1","label":"9a2e","lane":"feat","note":"invoice PDF"},
             {"id":"c4","label":"d44b","lane":"main","note":"chore: deps"},
             {"id":"r2","label":"f0a7","lane":"rel","note":"hotfix: login"},
-            {"id":"c5","label":"17ce","lane":"main","note":"fix: csv encoding","in":["missing"]},
+            {"id":"c5","label":"17ce","lane":"main","note":"fix: csv encoding","emphasis":"faded","when":{"missing":{"emphasis":"highlighted"}}},
             {"id":"f2","label":"3bd1","lane":"feat","note":"invoice email"},
             {"id":"c6","label":"88f2","lane":"main","note":"merge feat"}
           ],
@@ -306,7 +313,7 @@ export default [
               "id": "k4",
               "label": "fix: empty state when filters return nothing",
               "detail": "4e1a · conflicts in OrdersList.tsx unless b72c is picked",
-              "status": "fail",
+              "status": "failed",
               "meta": "+18 −3"
             }
           ],
@@ -340,7 +347,7 @@ export default [
             {"id":"types","label":"typecheck","status":"ok"},
             {"id":"unit","label":"unit tests","status":"ok"},
             {"id":"build","label":"build image","status":"ok"},
-            {"id":"integ","label":"integration tests","status":"fail"},
+            {"id":"integ","label":"integration tests","status":"failed"},
             {"id":"e2e","label":"e2e","status":"running"},
             {"id":"stg","label":"deploy staging","status":"pending"},
             {"id":"smoke","label":"smoke","status":"pending"},
@@ -396,7 +403,7 @@ export default [
             {
               "id": "payments",
               "label": "payments",
-              "cells": ["3.42.0",{"v":"3.42.0","status":"fail"},{"v":"3.40.0","change":"changed"},"failed in staging"]
+              "cells": ["3.42.0",{"v":"3.42.0","status":"failed"},{"v":"3.40.0","change":"changed"},"failed in staging"]
             },
             {"id":"search","label":"search","cells":["2.8.0","2.8.0","2.8.0","—"]},
             {"id":"worker","label":"worker","cells":["3.42.1","3.42.0",{"v":"3.41.0","change":"changed"},"1 release · 4 days"]}
@@ -444,14 +451,14 @@ export default [
               "label": "auth › refresh token rotation",
               "cells": [
                 {"v":"✓","status":"ok"},
-                {"v":"✗","status":"fail"},
+                {"v":"✗","status":"failed"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
-                {"v":"✗","status":"fail"},
+                {"v":"✗","status":"failed"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
-                {"v":"✗","status":"fail"},
+                {"v":"✗","status":"failed"},
                 {"v":"✓","status":"ok"},
                 "flaky"
               ]
@@ -468,9 +475,9 @@ export default [
                 {"v":"–"},
                 {"v":"–"},
                 {"v":"–"},
-                {"v":"✗","status":"fail"},
-                {"v":"✗","status":"fail"},
-                {"v":"real","status":"fail"}
+                {"v":"✗","status":"failed"},
+                {"v":"✗","status":"failed"},
+                {"v":"real","status":"failed"}
               ]
             },
             {
@@ -479,13 +486,13 @@ export default [
               "cells": [
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
-                {"v":"✗","status":"fail"},
+                {"v":"✗","status":"failed"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
-                {"v":"✗","status":"fail"},
+                {"v":"✗","status":"failed"},
                 {"v":"✓","status":"ok"},
                 "flaky"
               ]
@@ -498,7 +505,7 @@ export default [
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
-                {"v":"✗","status":"fail"},
+                {"v":"✗","status":"failed"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
                 {"v":"✓","status":"ok"},
@@ -564,7 +571,7 @@ export default [
     "shows": "Os tickets como grafo de dependências com o status de cada um e uma lente para o caminho crítico.",
     "interaction": "Alternar a lente do caminho crítico; clicar num ticket pergunta sobre ele.",
     "sources": ["MCP do Jira / Linear"],
-    "mechanisms": ["lentes","marcadores `status`","perguntar sobre isto"],
+    "mechanisms": ["estados (lentes)","marcadores `status`","perguntar sobre isto"],
     "tool": "present_view",
     "args": {
       "title": "What blocks the Organisations release",
@@ -575,25 +582,31 @@ export default [
           "type": "graph",
           "direction": "LR",
           "nodes": [
-            {"id":"o10","label":"ORG-10 schema","status":"ok","in":["critical"]},
-            {"id":"o11","label":"ORG-11 backfill","status":"ok","in":["critical"]},
-            {"id":"o12","label":"ORG-12 scope queries","status":"running","in":["critical"]},
+            {"id":"o10","label":"ORG-10 schema","status":"ok","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+            {"id":"o11","label":"ORG-11 backfill","status":"ok","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+            {"id":"o12","label":"ORG-12 scope queries","status":"running","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
             {"id":"o13","label":"ORG-13 switcher UI","status":"running"},
-            {"id":"o14","label":"ORG-14 RLS policies","status":"pending","in":["critical","unassigned"]},
+            {
+              "id": "o14",
+              "label": "ORG-14 RLS policies",
+              "status": "pending",
+              "emphasis": "faded",
+              "when": {"critical":{"emphasis":"highlighted"},"unassigned":{"emphasis":"highlighted"}}
+            },
             {"id":"o15","label":"ORG-15 invites","status":"running"},
-            {"id":"o16","label":"ORG-16 invite email","status":"pending","in":["unassigned"]},
-            {"id":"o17","label":"ORG-17 security review","status":"pending","in":["critical"]},
-            {"id":"o18","label":"ORG-18 release","status":"pending","in":["critical"]}
+            {"id":"o16","label":"ORG-16 invite email","status":"pending","emphasis":"faded","when":{"unassigned":{"emphasis":"highlighted"}}},
+            {"id":"o17","label":"ORG-17 security review","status":"pending","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+            {"id":"o18","label":"ORG-18 release","status":"pending","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}}
           ],
           "edges": [
-            {"from":"o10","to":"o11","in":["critical"]},
-            {"from":"o11","to":"o12","in":["critical"]},
-            {"from":"o12","to":"o14","in":["critical"]},
+            {"from":"o10","to":"o11","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+            {"from":"o11","to":"o12","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+            {"from":"o12","to":"o14","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
             {"from":"o12","to":"o13"},
             {"from":"o10","to":"o15"},
             {"from":"o15","to":"o16"},
-            {"from":"o14","to":"o17","in":["critical"]},
-            {"from":"o17","to":"o18","in":["critical"]},
+            {"from":"o14","to":"o17","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+            {"from":"o17","to":"o18","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
             {"from":"o13","to":"o18"},
             {"from":"o16","to":"o18"}
           ]
@@ -611,7 +624,7 @@ export default [
     "shows": "As colunas do quadro com os cartões, destacando os itens parados e a coluna acima do limite de WIP.",
     "interaction": "Alternar a lente de itens parados; clicar num cartão pergunta sobre ele.",
     "sources": ["MCP do Jira / Linear"],
-    "mechanisms": ["lentes","marcadores `status`","perguntar sobre isto"],
+    "mechanisms": ["estados (lentes)","marcadores `status`","perguntar sobre isto"],
     "tool": "present_view",
     "args": {
       "title": "Sprint 47 — day 6 of 10",
@@ -635,8 +648,15 @@ export default [
               "limit": 4,
               "items": [
                 {"id":"ORG-12","label":"ORG-12 Scope queries","tag":"story · 5 pts"},
-                {"id":"ORG-15","label":"ORG-15 Invites","tag":"story · 8 pts · 4d here","status":"warn","in":["stale"]},
-                {"id":"BUG-311","label":"BUG-311 Refund tax","tag":"bug · 1 day","in":["bugs"]}
+                {
+                  "id": "ORG-15",
+                  "label": "ORG-15 Invites",
+                  "tag": "story · 8 pts · 4d here",
+                  "status": "warn",
+                  "emphasis": "faded",
+                  "when": {"stale":{"emphasis":"highlighted"}}
+                },
+                {"id":"BUG-311","label":"BUG-311 Refund tax","tag":"bug · 1 day","emphasis":"faded","when":{"bugs":{"emphasis":"highlighted"}}}
               ]
             },
             {
@@ -645,7 +665,14 @@ export default [
               "limit": 2,
               "items": [
                 {"id":"ORG-13","label":"ORG-13 Switcher UI","tag":"story · 3 pts"},
-                {"id":"BUG-305","label":"BUG-305 CSV encoding","tag":"bug · 5d here","status":"warn","in":["stale","bugs"]},
+                {
+                  "id": "BUG-305",
+                  "label": "BUG-305 CSV encoding",
+                  "tag": "bug · 5d here",
+                  "status": "warn",
+                  "emphasis": "faded",
+                  "when": {"stale":{"emphasis":"highlighted"},"bugs":{"emphasis":"highlighted"}}
+                },
                 {"id":"ORG-19","label":"ORG-19 Audit log","tag":"story · 3 pts"}
               ]
             },
@@ -655,7 +682,7 @@ export default [
               "items": [
                 {"id":"ORG-10","label":"ORG-10 Schema","tag":"story · 5 pts","status":"ok"},
                 {"id":"ORG-11","label":"ORG-11 Backfill","tag":"story · 5 pts","status":"ok"},
-                {"id":"BUG-298","label":"BUG-298 Login loop","tag":"bug","status":"ok","in":["bugs"]}
+                {"id":"BUG-298","label":"BUG-298 Login loop","tag":"bug","status":"ok","emphasis":"faded","when":{"bugs":{"emphasis":"highlighted"}}}
               ]
             }
           ]
@@ -706,7 +733,7 @@ export default [
             {
               "id": "BUG-305",
               "label": "BUG-305 CSV encoding",
-              "cells": [{"v":"In review","status":"running"},{"v":"#476 open","status":"running"},{"v":"failing","status":"fail"},{"v":"—"}]
+              "cells": [{"v":"In review","status":"running"},{"v":"#476 open","status":"running"},{"v":"failing","status":"failed"},{"v":"—"}]
             }
           ]
         }
@@ -748,7 +775,7 @@ export default [
               "id": "st6",
               "label": "Organisation switcher in the web app",
               "detail": "blocked: needs the /me/organisations endpoint from step 4 to pass its test",
-              "status": "warn",
+              "status": "blocked",
               "meta": "subagent: web"
             },
             {"id":"st7","label":"Run the full suite and write the PR description","status":"pending"}
@@ -760,7 +787,7 @@ export default [
           "columns": [{"id":"task","label":"Working on"},{"id":"state","label":"State"},{"id":"files","label":"Files touched"}],
           "rows": [
             {"id":"sa1","label":"tests","cells":["test/projects/*.test.ts",{"v":"running","status":"running"},"23"]},
-            {"id":"sa2","label":"web","cells":["web/components/OrgSwitcher.tsx",{"v":"waiting","status":"warn"},"4"]},
+            {"id":"sa2","label":"web","cells":["web/components/OrgSwitcher.tsx",{"v":"waiting","status":"blocked"},"4"]},
             {"id":"sa3","label":"docs","cells":["docs/api.md",{"v":"done","status":"ok"},"2"]}
           ]
         }
@@ -845,10 +872,10 @@ export default [
           "nodes": [
             {"id":"app","label":"shop-api@3.42.1"},
             {"id":"dep1","label":"express 4.18.2 → 4.21.1","meta":"minor · non-breaking","parent":"app"},
-            {"id":"dep1a","label":"body-parser 1.20.1","status":"fail","note":"CVE-2024-45590 · high · DoS","parent":"dep1"},
-            {"id":"dep1b","label":"path-to-regexp 0.1.7","status":"fail","note":"CVE-2024-45296 · high · ReDoS","parent":"dep1"},
+            {"id":"dep1a","label":"body-parser 1.20.1","status":"failed","note":"CVE-2024-45590 · high · DoS","parent":"dep1"},
+            {"id":"dep1b","label":"path-to-regexp 0.1.7","status":"failed","note":"CVE-2024-45296 · high · ReDoS","parent":"dep1"},
             {"id":"dep2","label":"pdfkit 0.13.0 → 0.15.0","meta":"minor · table API changed","parent":"app"},
-            {"id":"dep2a","label":"crypto-js 4.1.1","status":"fail","note":"CVE-2023-46233 · critical · weak PBKDF2","parent":"dep2"},
+            {"id":"dep2a","label":"crypto-js 4.1.1","status":"failed","note":"CVE-2023-46233 · critical · weak PBKDF2","parent":"dep2"},
             {"id":"dep3","label":"jest 29.5.0 → 29.7.0","meta":"patch · dev only","parent":"app"},
             {"id":"dep3a","label":"braces 3.0.2","status":"warn","note":"CVE-2024-4068 · moderate · dev dependency","parent":"dep3"}
           ]
@@ -880,7 +907,7 @@ export default [
             {"id":"k1","label":"DATABASE_URL","cells":["dev-db","stg-db","prod-db"]},
             {"id":"k2","label":"REPLICAS","cells":["1","2","6"]},
             {"id":"k3","label":"RATE_LIMIT_ENABLED","cells":["true","true",{"v":"false","change":"changed"}]},
-            {"id":"k4","label":"REDIS_URL","cells":["set","set",{"v":"missing","status":"fail"}]},
+            {"id":"k4","label":"REDIS_URL","cells":["set","set",{"v":"missing","status":"failed"}]},
             {"id":"k5","label":"PG_POOL_MAX","cells":["10","10",{"v":"10","status":"warn"}]},
             {"id":"k6","label":"LOG_LEVEL","cells":[{"v":"debug","change":"changed"},"info","info"]}
           ],
@@ -933,7 +960,7 @@ export default [
               "value": 3610,
               "valueLabel": "3610 ms",
               "meta": "1.9M of 14M rows",
-              "status": "fail",
+              "status": "failed",
               "parent": "n3"
             },
             {"id":"n5","label":"Hash","value":85,"valueLabel":"85 ms","meta":"41k rows","parent":"n3"},

@@ -110,8 +110,26 @@ const cases: [string, () => Promise<void>][] = [
     await view(page).getByRole("button", { name: "After" }).waitFor();
     await lenses.getByRole("button", { name: "Remove item" }).click();
     await update(page).click();
-    await view(page).locator(".wrap h1").waitFor();
-    assert.equal(await view(page).getByRole("button", { name: "After" }).count(), 0);
+    // The frame re-renders after the message arrives, so wait for the chip to go rather than count at once.
+    await view(page).getByRole("button", { name: "After" }).waitFor({ state: "detached" });
+    await page.close();
+  }],
+
+  ["the form edits `when` with the element's own dropdowns, offering the view's states", async () => {
+    const page = await open();
+    await page.getByLabel("Load a tool call").selectOption("decision");
+    await page.locator('.form .arr[data-path="blocks"] > details > summary').nth(1).click();
+    await page.locator('.form .arr[data-path="blocks[1].nodes"] > details > summary').first().click();
+    const node = page.locator('.form .obj[data-path="blocks[1].nodes[0]"]');
+    await node.locator(".chip", { hasText: "+ when" }).click();
+    await node.getByRole("button", { name: "+ state" }).click();
+    assert.equal(await node.getByLabel("State id").inputValue(), "opt-a", "the first state of the view is proposed");
+    await node.locator('.obj[data-path="blocks[1].nodes[0].when.opt-a"] .chip', { hasText: "+ status" }).click();
+    await page.locator('.form select[data-path="blocks[1].nodes[0].when.opt-a.status"]').selectOption("blocked");
+    await update(page).click();
+    await view(page).locator('.graph [data-id="d-app"][data-status="blocked"]').waitFor();
+    await view(page).locator('[data-id="opt-b"]').first().hover();
+    await view(page).locator('.graph [data-id="d-app"]:not([data-status])').waitFor();
     await page.close();
   }],
 

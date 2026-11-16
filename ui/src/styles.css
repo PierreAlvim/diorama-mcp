@@ -37,14 +37,17 @@ p { margin: 0; }
 .el.clickable { cursor: pointer; }
 .el.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 [data-change="added"], [data-status="ok"] { --mk: var(--good); }
-[data-change="removed"], [data-status="fail"] { --mk: var(--bad); }
+[data-change="removed"], [data-status="failed"] { --mk: var(--bad); }
 [data-change="changed"], [data-status="warn"] { --mk: var(--warn); }
 [data-change="affected"] { --mk: var(--violet); }
 [data-status="running"] { --mk: var(--info); }
-[data-status="pending"] { --mk: var(--fg-2); }
+[data-status="pending"], [data-status="skipped"] { --mk: var(--fg-2); }
+[data-status="blocked"] { --mk: var(--violet); }
 .mark { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: var(--mk); color: var(--bg); font-size: 11px; font-weight: 700; line-height: 1; flex: none; margin-right: 6px; vertical-align: -2px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--mk); flex: none; margin-right: 6px; }
 .dot[data-status="pending"] { background: transparent; border: 1.5px solid var(--mk); }
+.dot[data-status="skipped"] { background: transparent; border: 1.5px dotted var(--mk); }
+.dot[data-status="blocked"] { border-radius: 2px; }
 .dot[data-status="running"] { background: transparent; border: 2px dashed var(--mk); animation: spin 2.4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dot[data-status="running"] { animation: none; } }
@@ -68,8 +71,6 @@ p { margin: 0; }
 .chip-btn[aria-pressed="true"] { background: var(--opt, var(--accent)); border-color: var(--opt, var(--accent)); color: #fff; font-weight: 600; }
 .walk { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
 .walk b { color: var(--accent); font-size: 12px; white-space: nowrap; }
-.walk.idle { border-color: var(--line); background: var(--bg-2); }
-.walk.idle b, .walk.idle p { color: var(--fg-2); }
 .walk-nav { display: flex; gap: 4px; }
 .walk-nav button { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
 .walk-nav button:last-child:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -222,6 +223,7 @@ th { color: var(--fg-2); font-weight: 600; }
 .graph .svg-mark text { fill: var(--bg); font-size: 11px; font-weight: 700; }
 .svg-dot { fill: var(--mk); }
 .svg-dot[data-status="pending"] { fill: var(--bg); stroke: var(--mk); stroke-width: 1.5; }
+.svg-dot[data-status="skipped"] { fill: var(--bg); stroke: var(--mk); stroke-width: 1.5; stroke-dasharray: 1.5 2; }
 .svg-dot[data-status="running"] { fill: none; stroke: var(--mk); stroke-width: 2.4; stroke-dasharray: 5 3; }
 .lifeline, .lane { stroke: var(--line); stroke-dasharray: 3 4; }
 .graph .lane-label { font-weight: 600; font-size: 11.5px; }

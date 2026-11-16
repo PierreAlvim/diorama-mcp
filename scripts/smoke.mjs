@@ -43,6 +43,15 @@ try {
   const walk = await call("present_view", { title: "x", blocks: [cards], walkthrough: [{ text: "t", focus: ["ghost"] }] });
   assert.match(walk.content[0].text, /unknown id "ghost"/);
 
+  // `when` is loosely typed in the schema to keep it small; lint is what checks it.
+  const whenCall = (when, extra = {}) => call("present_view", { title: "x", lenses: [{ id: "after", label: "After" }], blocks: [{ type: "steps", items: [{ id: "s", label: "S", when }] }], ...extra });
+  assert.ok(!(await whenCall({ after: { status: "blocked", emphasis: "faded", note: "anything" } })).isError);
+  assert.match((await whenCall({ later: { status: "ok" } })).content[0].text, /when: "later" is not a state\. States are the lens and card ids: after\./);
+  assert.match((await whenCall({ after: { status: "broken" } })).content[0].text, /when: status "broken" is not one of ok, warn, failed, pending, running, blocked, skipped\./);
+  assert.match((await whenCall({ after: { label: "Other" } })).content[0].text, /when: "label" cannot vary by state\. Only change, status, emphasis, note can\./);
+  assert.match((await whenCall({}, { walkthrough: [{ text: "t", state: "before" }] })).content[0].text, /walkthrough\[0\]: state "before" is not a state/);
+  assert.ok((await call("present_view", { title: "x", blocks: [{ type: "steps", items: [{ id: "s", label: "S", in: ["a"], status: "fail" }] }] })).isError, "the old status name is rejected");
+
   const res = await client.readResource({ uri: uris[0] });
   const html = res.contents[0];
   assert.equal(html.mimeType, "text/html;profile=mcp-app");
