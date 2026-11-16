@@ -11,7 +11,26 @@ Two things it is for:
 - **Showing**: explaining a system, walking through an incident, reporting progress. Nothing is asked and the agent carries on.
 - **Asking**: choosing between options, approving a plan step by step, picking what makes the cut. The answer goes back to the chat as a message and is appended to a local log.
 
-## Setup
+## Install
+
+Not on npm yet. The beta runs straight from the release tarball. In VS Code, add to `.vscode/mcp.json` (and turn on the `chat.mcp.apps.enabled` setting):
+
+```json
+{
+  "servers": {
+    "diorama": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "https://github.com/PierreAlvim/diorama-mcp/releases/download/v1.0.0-beta.1/diorama-mcp-1.0.0-beta.1.tgz"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+Any MCP client that renders MCP Apps can use the same command. Clients that do not render them still get the text summary of each view.
+
+## Setup from source
 
 ```bash
 git clone https://github.com/PierreAlvim/diorama-mcp.git && cd diorama-mcp
