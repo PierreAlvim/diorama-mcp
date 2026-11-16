@@ -106,9 +106,11 @@ O agente envia dados estruturados e relações entre eles. A view decide layout,
 | \`board\` | cartões em colunas | implementado |
 | \`chart\` | séries numéricas | implementado |
 
-**Marcadores** (em qualquer elemento): \`in\` (lentes a que pertence), \`refs\` (elementos relacionados), \`change\` (added, removed, changed, affected), \`status\` (ok, fail, running, warn, pending), \`note\`.
+**Propriedades** (em qualquer elemento): \`change\` (added, removed, changed, affected), \`status\` (ok, warn, failed, pending, running, blocked, skipped), \`emphasis\` (normal, highlighted, faded), \`note\`.
 
-**Mecanismos interativos:** destaque ligado, lentes, passo a passo (\`walkthrough\`), perguntar sobre isto. Ainda não implementados: detalhe sob demanda, filtro, atualizar.
+**Estados.** Cada lente e cada cartão é um estado nomeado, e a view está sempre em um deles. \`when\` declara o que muda num estado; o valor fora do \`when\` vale nos demais. É a única relação que o agente declara.
+
+**Mecanismos interativos:** estados (lentes e opções), passo a passo (\`walkthrough\`, que pode trocar o estado e focar elementos), destaque por id igual ao passar o mouse, perguntar sobre isto. Ainda não implementados: detalhe sob demanda, filtro, atualizar.
 
 **Respostas:** \`choose_one\`, \`choose_many\`, \`approve\` (por item ou no todo); \`choose_one\` aceita vários blocos (uma escolha por bloco). Ainda não implementados: \`rank\`, \`comment\`.
 
@@ -178,8 +180,8 @@ md += `
 
 - **Sete componentes atendem a maioria dos cenários.** \`sequence\`, \`quadrant\`, \`board\` e \`chart\` aparecem em poucos casos cada; existem porque nesses casos nenhum outro serve.
 - **\`matrix\` e \`steps\` são os mais reutilizados.** Aparecem em quase todos os momentos, de permissões a progresso do agente.
-- **Os marcadores fazem o trabalho de vários componentes.** Diff, impacto, status de pipeline e cobertura de testes são um grafo, uma árvore ou uma matriz com \`change\` ou \`status\`.
-- **\`refs\` é o que liga blocos de natureza diferente.** Uma suposição que aponta para nós do grafo, um risco que aponta para a célula da matriz.
+- **As propriedades fazem o trabalho de vários componentes.** Diff, impacto, status de pipeline e cobertura de testes são um grafo, uma árvore ou uma matriz com \`change\` ou \`status\`.
+- **Estado é a única relação declarada.** Uma opção que muda onde fica o gargalo, um antes e depois, três momentos de um incidente: tudo é o mesmo elemento com \`when\`. Ligar blocos diferentes não exige declaração: basta o mesmo id.
 - **O passo a passo é o mecanismo das conclusões.** Sempre que o agente tem algo a concluir (incidente, pipeline, plano de query), a narrativa em passos carrega a conclusão e a view carrega a evidência.
 
 ## 8. Limites e pontos fracos

@@ -1,8 +1,9 @@
 import { answerables } from "../../shared/lint";
-import type { Block, Decision, DecisionRecord, Markers, Response, View } from "../../shared/schema";
+import { type El, elements } from "../../shared/state";
+import type { Block, Decision, DecisionRecord, Response, View } from "../../shared/schema";
 
 export type Doc = View | Decision;
-export type El = Markers & { id?: string };
+export type { El };
 export type Emph = "on" | "off" | "neutral";
 
 export const isDecision = (d: Doc): d is Decision => "response" in d && !!d.response;
@@ -14,70 +15,39 @@ export function normalize(raw: unknown): Doc | null {
   return { ...d, title: d.title ?? "", blocks: d.blocks.filter((b) => b && typeof b.type === "string") } as Doc;
 }
 
-/** Every element that can carry markers, with the block it lives in. */
-export function elements(doc: Doc): El[] {
-  const out: El[] = [];
-  for (const b of doc.blocks) {
-    if (b.type === "cards" || b.type === "steps" || b.type === "quadrant") out.push(...b.items);
-    else if (b.type === "graph") out.push(...b.nodes, ...b.edges);
-    else if (b.type === "tree") out.push(...b.nodes);
-    else if (b.type === "matrix") out.push(...b.rows, ...b.rows.flatMap((r) => r.cells.filter((c): c is Exclude<typeof c, string> => typeof c === "object")));
-    else if (b.type === "board") out.push(...b.columns.flatMap((c) => c.items));
-    else if (b.type === "sequence") out.push(...b.messages);
-    else if (b.type === "timeline") out.push(...b.tracks, ...b.tracks.flatMap((t) => t.phases), ...(b.events ?? []));
-    else if (b.type === "tradeoff") out.push(...b.items);
+/** Ids carried by more than one element: hovering one lights up the others. This is view behaviour; the agent declares nothing. */
+export function repeated(doc: Doc): Set<string> {
+  const seen = new Set<string>();
+  const out = new Set<string>();
+  for (const el of elements(doc)) {
+    if (!el.id) continue;
+    if (seen.has(el.id)) out.add(el.id);
+    seen.add(el.id);
   }
   return out;
 }
 
-export interface Links {
-  /** Ids that act as a lens: declared lenses and anything named by an `in`. */
-  lens: Set<string>;
-  /** Ids worth highlighting on hover: they point at, are pointed at by, or repeat as another element. */
-  linked: Set<string>;
-  /** id -> ids it references. */
-  refs: Map<string, string[]>;
+/**
+ * Two independent things decide how an element looks:
+ * the active state (what the element is, declared by the agent) and the spotlight (where to look right now).
+ */
+export interface Focus {
+  state: string | null;
+  /** `strict` is a walkthrough step: only the listed ids stay lit. A hover is not strict: it never fades what the agent highlighted. */
+  spot?: { ids: Set<string>; strict: boolean };
 }
 
-export function links(doc: Doc): Links {
-  const lens = new Set((doc.lenses ?? []).map((l) => l.id));
-  const linked = new Set<string>();
-  const refs = new Map<string, string[]>();
-  const seen = new Set<string>();
-  for (const el of elements(doc)) {
-    for (const l of el.in ?? []) lens.add(l);
-    if (el.id) {
-      if (seen.has(el.id)) linked.add(el.id);
-      seen.add(el.id);
-      if (el.refs?.length) {
-        linked.add(el.id);
-        refs.set(el.id, [...(refs.get(el.id) ?? []), ...el.refs]);
-      }
-    }
-    for (const r of el.refs ?? []) linked.add(r);
-  }
-  return { lens, linked, refs };
-}
-
-export type Focus =
-  | { kind: "none" }
-  /** A perspective: members light up, elements of other lenses fade, common elements stay. */
-  | { kind: "lens"; id: string }
-  /** A spotlight: everything outside it fades. `source` is the hovered element, if any. */
-  | { kind: "spot"; ids: Set<string>; source?: string };
-
+/** `el` must already be resolved for the active state (see applyState). */
 export function emphasis(el: El & { from?: string; to?: string }, focus: Focus, isEdge = false): Emph {
-  if (focus.kind === "none") return "neutral";
-  if (focus.kind === "lens") {
-    if (el.id === focus.id) return "on";
-    if (!el.in) return "neutral";
-    return el.in.includes(focus.id) ? "on" : "off";
+  // An element that carries the active state's id is that state seen in another block.
+  const declared = el.emphasis ?? (el.id !== undefined && el.id === focus.state ? "highlighted" : "normal");
+  if (focus.spot) {
+    const { ids, strict } = focus.spot;
+    if (el.id && ids.has(el.id)) return "on";
+    if (isEdge && el.from && el.to && ids.has(el.from) && ids.has(el.to)) return "on";
+    return !strict && declared === "highlighted" ? "on" : "off";
   }
-  if (el.id && focus.ids.has(el.id)) return "on";
-  if (el.in?.some((l) => focus.ids.has(l))) return "on";
-  if (focus.source && el.refs?.includes(focus.source)) return "on";
-  if (isEdge && !el.in && el.from && el.to && focus.ids.has(el.from) && focus.ids.has(el.to)) return "on";
-  return "off";
+  return declared === "highlighted" ? "on" : declared === "faded" ? "off" : "neutral";
 }
 
 // ---- answers -------------------------------------------------------------

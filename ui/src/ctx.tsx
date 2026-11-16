@@ -10,7 +10,8 @@ export interface Ctx {
   /** Answer state of an item, when its block is the one being answered on. */
   answer(block: Block, itemId: string): { type: "choose_one" | "choose_many" | "approve"; value?: string; set(v?: "ok" | "no"): void } | null;
   color(id: string): string | undefined;
-  activeLens: string | null;
+  /** The state the view is in, or null when states are not in play. */
+  activeState: string | null;
   locked: boolean;
 }
 

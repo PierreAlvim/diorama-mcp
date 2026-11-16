@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
+import { applyState, initialState, stateful, states } from "../../shared/state";
 import type { Block, DecisionRecord } from "../../shared/schema";
 import { Blocks } from "./blocks";
 import { type BindProps, type Ctx, ViewCtx } from "./ctx";
-import { type Doc, type Focus, type Picks, type Verdict, askMessage, buildAnswer, canSubmit, emphasis, isDecision, links, pickKey, targetItems, togglePick } from "./model";
+import { type Doc, type Focus, type Picks, type Verdict, askMessage, buildAnswer, canSubmit, emphasis, isDecision, pickKey, repeated, targetItems, togglePick } from "./model";
 
 /** How the view talks back; implemented by the MCP host bridge and by the standalone preview. */
 export interface Host {
@@ -18,7 +19,8 @@ type Asking = { id?: string; label: string } | null;
 
 export function App({ doc, host }: { doc: Doc; host: Host }) {
   const decision = isDecision(doc) ? doc : null;
-  const lk = useMemo(() => links(doc), [doc]);
+  const stateIds = useMemo(() => new Set(stateful(doc) ? states(doc).map((x) => x.id) : []), [doc]);
+  const linked = useMemo(() => repeated(doc), [doc]);
   const groups = useMemo(() => (decision ? targetItems(decision) : []), [decision]);
   const answerable = useMemo(() => new Map(groups.map((g) => [g.block.id, new Set(g.items.map((i) => i.id))])), [groups]);
   const colors = useMemo(() => {
@@ -28,8 +30,8 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
 
   const [picks, setPicks] = useState<Picks>({});
   const [hover, setHover] = useState<string | null>(null);
-  const [lens, setLens] = useState<string | null>(null);
   const [step, setStep] = useState<number | null>(doc.walkthrough?.length ? 0 : null);
+  const [selected, setSelected] = useState<string | null>(() => doc.walkthrough?.[0]?.state ?? initialState(doc));
   const [note, setNote] = useState("");
   const [sent, setSent] = useState<Sent>({ kind: "open" });
   const [asking, setAsking] = useState<Asking>(null);
@@ -37,31 +39,30 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
   const [asked, setAsked] = useState<{ text: string; delivered: boolean } | null>(null);
   const locked = sent.kind === "sending" || sent.kind === "done";
 
-  // A single-block choice doubles as a lens: the chosen (or recommended) card lights up its part of the other blocks.
-  const cardLens = useMemo(() => {
-    if (!decision || decision.response.type !== "choose_one" || groups.length !== 1) return null;
-    const g = groups[0];
-    const chosen = g.items.find((i) => picks[pickKey(g.block.id, i.id)])?.id;
-    const recommended = g.block.type === "cards" ? g.block.items.find((i) => i.recommended)?.id : undefined;
-    const id = chosen ?? recommended;
-    return id && lk.lens.has(id) ? id : null;
-  }, [decision, groups, picks, lk]);
-
-  const activeLens = hover && lk.lens.has(hover) && !locked ? hover : (lens ?? (step === null ? cardLens : null));
+  // State and spotlight are independent: the state says what each element is, the spotlight says where to look.
+  // Hovering something that is a state (a card, a lens) previews it; hovering anything else spotlights its other appearances.
+  const activeState = hover && stateIds.has(hover) && !locked ? hover : selected;
   const focus: Focus = useMemo(() => {
-    if (hover && !locked) {
-      if (lk.lens.has(hover)) return { kind: "lens", id: hover };
-      if (lk.linked.has(hover)) return { kind: "spot", ids: new Set([hover, ...(lk.refs.get(hover) ?? [])]), source: hover };
-    }
-    if (lens) return { kind: "lens", id: lens };
-    if (step !== null && doc.walkthrough?.[step]) return { kind: "spot", ids: new Set(doc.walkthrough[step].focus) };
-    if (cardLens) return { kind: "lens", id: cardLens };
-    return { kind: "none" };
-  }, [hover, locked, lens, step, cardLens, lk, doc]);
+    if (hover && !locked && !stateIds.has(hover) && linked.has(hover)) return { state: activeState, spot: { ids: new Set([hover]), strict: false } };
+    const ids = step !== null ? doc.walkthrough?.[step]?.focus : undefined;
+    return ids?.length ? { state: activeState, spot: { ids: new Set(ids), strict: true } } : { state: activeState };
+  }, [hover, locked, stateIds, linked, activeState, step, doc]);
+  const shown = useMemo(() => applyState(doc, activeState), [doc, activeState]);
+
+  const go = (n: number) => {
+    setStep(n);
+    const next = doc.walkthrough?.[n]?.state;
+    if (next) setSelected(next);
+  };
 
   const pick = useCallback(
-    (blockId: string, itemId: string, value?: "ok" | "no") => decision && !locked && setPicks((p) => togglePick(decision, p, blockId, itemId, value)),
-    [decision, locked],
+    (blockId: string, itemId: string, value?: "ok" | "no") => {
+      if (!decision || locked) return;
+      setPicks((p) => togglePick(decision, p, blockId, itemId, value));
+      // Choosing an option also switches the view to it.
+      if (decision.response.type === "choose_one" && stateIds.has(itemId)) setSelected(itemId);
+    },
+    [decision, locked, stateIds],
   );
 
   const ctx: Ctx = useMemo(() => {
@@ -71,7 +72,7 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
       return { type: decision.response.type, value: picks[pickKey(blockId, itemId)], set: (v) => pick(blockId, itemId, v) };
     };
     return {
-      activeLens,
+      activeState,
       locked,
       answer,
       color: (id) => colors.get(id),
@@ -99,7 +100,7 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
         return props;
       },
     };
-  }, [activeLens, locked, colors, focus, decision, answerable, picks, pick]);
+  }, [activeState, locked, colors, focus, decision, answerable, picks, pick]);
 
   async function submit(verdict?: Verdict) {
     if (!decision) return;
@@ -144,7 +145,7 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
 
   return (
     <ViewCtx.Provider value={ctx}>
-      <div className="wrap" style={{ "--opt": (activeLens && colors.get(activeLens)) || "var(--accent)" } as React.CSSProperties}>
+      <div className="wrap" style={{ "--opt": (activeState && colors.get(activeState)) || "var(--accent)" } as React.CSSProperties}>
         <header>
           <h1>{doc.title}</h1>
           {doc.context && <p className="context">{doc.context}</p>}
@@ -160,8 +161,8 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
                 type="button"
                 className="chip-btn"
                 style={{ "--opt": colors.get(l.id) } as React.CSSProperties}
-                aria-pressed={lens === l.id}
-                onClick={() => (setLens(lens === l.id ? null : l.id), setStep(null))}
+                aria-pressed={selected === l.id}
+                onClick={() => setSelected(l.id)}
               >
                 {l.label}
               </button>
@@ -169,15 +170,15 @@ export function App({ doc, host }: { doc: Doc; host: Host }) {
           </div>
         )}
 
-        <Blocks blocks={doc.blocks} />
+        <Blocks blocks={shown.blocks} />
 
-        {walk && walk.length > 0 && (
-          <div className={`walk ${step === null ? "idle" : ""}`}>
-            <b>{step === null ? "Walkthrough" : `Step ${step + 1} of ${walk.length}`}</b>
-            <p>{step === null ? "Paused while a lens is active." : walk[step].text}</p>
+        {walk && walk.length > 0 && step !== null && (
+          <div className="walk">
+            <b>Step {step + 1} of {walk.length}</b>
+            <p>{walk[step].text}</p>
             <span className="walk-nav">
-              <button type="button" aria-label="Previous step" disabled={step === null || step === 0} onClick={() => (setLens(null), setStep((s) => Math.max(0, (s ?? 0) - 1)))}>‹</button>
-              <button type="button" aria-label="Next step" disabled={step !== null && step === walk.length - 1} onClick={() => (setLens(null), setStep((s) => (s === null ? 0 : Math.min(walk.length - 1, s + 1))))}>›</button>
+              <button type="button" aria-label="Previous step" disabled={step === 0} onClick={() => go(step - 1)}>‹</button>
+              <button type="button" aria-label="Next step" disabled={step === walk.length - 1} onClick={() => go(step + 1)}>›</button>
             </span>
           </div>
         )}

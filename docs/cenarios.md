@@ -59,9 +59,11 @@ O agente envia dados estruturados e relações entre eles. A view decide layout,
 | `board` | cartões em colunas | implementado |
 | `chart` | séries numéricas | implementado |
 
-**Marcadores** (em qualquer elemento): `in` (lentes a que pertence), `refs` (elementos relacionados), `change` (added, removed, changed, affected), `status` (ok, fail, running, warn, pending), `note`.
+**Propriedades** (em qualquer elemento): `change` (added, removed, changed, affected), `status` (ok, warn, failed, pending, running, blocked, skipped), `emphasis` (normal, highlighted, faded), `note`.
 
-**Mecanismos interativos:** destaque ligado, lentes, passo a passo (`walkthrough`), perguntar sobre isto. Ainda não implementados: detalhe sob demanda, filtro, atualizar.
+**Estados.** Cada lente e cada cartão é um estado nomeado, e a view está sempre em um deles. `when` declara o que muda num estado; o valor fora do `when` vale nos demais. É a única relação que o agente declara.
+
+**Mecanismos interativos:** estados (lentes e opções), passo a passo (`walkthrough`, que pode trocar o estado e focar elementos), destaque por id igual ao passar o mouse, perguntar sobre isto. Ainda não implementados: detalhe sob demanda, filtro, atualizar.
 
 **Respostas:** `choose_one`, `choose_many`, `approve` (por item ou no todo); `choose_one` aceita vários blocos (uma escolha por bloco). Ainda não implementados: `rank`, `comment`.
 
@@ -133,13 +135,13 @@ O agente tem alternativas reais e a escolha é cara de reverter. É o que o MVP 
 
 **O que o agente mostra.** Cartões das alternativas, notas por critério com o motivo de cada nota, e um único grafo em que cada alternativa acende os seus nós.
 
-**Interação.** Passar o mouse num cartão troca a lente: o grafo destaca o caminho daquela alternativa e a tabela mostra os motivos dela.
+**Interação.** Passar o mouse num cartão troca o estado da view: o grafo destaca o caminho daquela alternativa, marca o que ela acrescenta e onde passa a ficar a pressão (pods da API no SSE, Postgres no polling), e a tabela mostra os motivos dela.
 
 | | |
 |---|---|
 | Ferramenta | `present_decision` |
 | Componentes | `cards`, `tradeoff`, `graph` |
-| Mecanismos | lentes (opções), destaque ligado |
+| Mecanismos | estados (opções), propriedades por estado (`when`) |
 | Resposta | `choose_one` por item |
 | Fontes | leitura do código, docs do load balancer |
 | Ainda não implementado | nada |
@@ -228,22 +230,44 @@ Note: keep polling as fallback for the legacy mobile app
         "nodes": [
           {"id":"browser","label":"Browser"},
           {"id":"alb","label":"ALB"},
-          {"id":"api","label":"API pods"},
-          {"id":"gw","label":"WS gateway","in":["ws"]},
-          {"id":"redis","label":"Redis pub/sub","in":["ws","sse"]},
+          {"id":"api","label":"API pods","when":{"sse":{"status":"warn","note":"one open connection per tab"}}},
+          {
+            "id": "gw",
+            "label": "WS gateway",
+            "emphasis": "faded",
+            "when": {"ws":{"emphasis":"highlighted","change":"added","note":"new service to run"}}
+          },
+          {
+            "id": "redis",
+            "label": "Redis pub/sub",
+            "emphasis": "faded",
+            "when": {"ws":{"emphasis":"highlighted","change":"added"},"sse":{"emphasis":"highlighted","change":"added"}}
+          },
           {"id":"worker","label":"Notifier worker"},
-          {"id":"db","label":"Postgres"}
+          {"id":"db","label":"Postgres","when":{"poll":{"status":"warn","note":"10x the read load"}}}
         ],
         "edges": [
           {"from":"browser","to":"alb"},
-          {"from":"alb","to":"api","label":"SSE stream","in":["sse"]},
-          {"from":"alb","to":"api","label":"GET every 3s","in":["poll"]},
-          {"from":"alb","to":"gw","label":"ws://","in":["ws"]},
-          {"from":"worker","to":"redis","label":"publish","in":["ws","sse"]},
-          {"from":"redis","to":"api","in":["sse"]},
-          {"from":"redis","to":"gw","in":["ws"]},
+          {"from":"alb","to":"api","label":"SSE stream","emphasis":"faded","when":{"sse":{"emphasis":"highlighted"}}},
+          {
+            "from": "alb",
+            "to": "api",
+            "label": "GET every 3s",
+            "emphasis": "faded",
+            "when": {"poll":{"emphasis":"highlighted"}}
+          },
+          {"from":"alb","to":"gw","label":"ws://","emphasis":"faded","when":{"ws":{"emphasis":"highlighted"}}},
+          {
+            "from": "worker",
+            "to": "redis",
+            "label": "publish",
+            "emphasis": "faded",
+            "when": {"ws":{"emphasis":"highlighted"},"sse":{"emphasis":"highlighted"}}
+          },
+          {"from":"redis","to":"api","emphasis":"faded","when":{"sse":{"emphasis":"highlighted"}}},
+          {"from":"redis","to":"gw","emphasis":"faded","when":{"ws":{"emphasis":"highlighted"}}},
           {"from":"worker","to":"db"},
-          {"from":"api","to":"db","label":"query","in":["poll"]}
+          {"from":"api","to":"db","label":"query","emphasis":"faded","when":{"poll":{"emphasis":"highlighted"}}}
         ]
       }
     ],
@@ -270,7 +294,7 @@ Note: keep polling as fallback for the legacy mobile app
 |---|---|
 | Ferramenta | `present_decision` |
 | Componentes | `cards`, `timeline` |
-| Mecanismos | lentes (opções), destaque ligado |
+| Mecanismos | estados (opções), destaque ligado |
 | Resposta | `choose_one` por item |
 | Fontes | ticket de origem, leitura do código |
 | Ainda não implementado | nada |
@@ -372,7 +396,7 @@ Decision on "Report export scope": go with "Standard" (option id: standard).
 |---|---|
 | Ferramenta | `present_decision` |
 | Componentes | `cards`, `timeline` |
-| Mecanismos | lentes (opções), destaque ligado |
+| Mecanismos | estados (opções), destaque ligado |
 | Resposta | `choose_one` por item |
 | Fontes | leitura do código, métricas de sessões ativas |
 | Ainda não implementado | nada |
@@ -486,7 +510,7 @@ Decision on "Session store migration": go with "Dual-write, then cut over" (opti
 |---|---|
 | Ferramenta | `present_decision` |
 | Componentes | `cards`, `graph` |
-| Mecanismos | lentes (opções), marcadores `change` |
+| Mecanismos | estados (opções), marcadores `change` |
 | Resposta | `choose_one` por item |
 | Fontes | leitura do código, grafo de imports |
 | Ainda não implementado | nada |
@@ -550,24 +574,48 @@ Decision on "Breaking up OrderService": go with "Extract by domain" (option id: 
         "nodes": [
           {"id":"ctrl","label":"OrderController"},
           {"id":"svc","label":"OrderService","change":"changed"},
-          {"id":"facade","label":"OrderFacade","change":"added","in":["facade"]},
-          {"id":"pricing","label":"Pricing","change":"added","in":["domain","rewrite"]},
-          {"id":"stock","label":"Stock","change":"added","in":["domain","rewrite"]},
-          {"id":"invoice","label":"Invoicing","change":"added","in":["domain","rewrite"]},
-          {"id":"pipe","label":"OrderPipeline","change":"added","in":["rewrite"]},
+          {"id":"order-facade","label":"OrderFacade","change":"added"},
+          {
+            "id": "pricing",
+            "label": "Pricing",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"domain":{"emphasis":"highlighted"},"rewrite":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "stock",
+            "label": "Stock",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"domain":{"emphasis":"highlighted"},"rewrite":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "invoice",
+            "label": "Invoicing",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"domain":{"emphasis":"highlighted"},"rewrite":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "pipe",
+            "label": "OrderPipeline",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"rewrite":{"emphasis":"highlighted"}}
+          },
           {"id":"repo","label":"OrderRepo"}
         ],
         "edges": [
-          {"from":"ctrl","to":"svc","in":["domain"]},
-          {"from":"ctrl","to":"facade","in":["facade"]},
-          {"from":"facade","to":"svc","in":["facade"]},
-          {"from":"ctrl","to":"pipe","in":["rewrite"]},
-          {"from":"svc","to":"pricing","in":["domain"]},
-          {"from":"svc","to":"stock","in":["domain"]},
-          {"from":"svc","to":"invoice","in":["domain"]},
-          {"from":"pipe","to":"pricing","in":["rewrite"]},
-          {"from":"pipe","to":"stock","in":["rewrite"]},
-          {"from":"pipe","to":"invoice","in":["rewrite"]},
+          {"from":"ctrl","to":"svc","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+          {"from":"ctrl","to":"order-facade","emphasis":"faded","when":{"facade":{"emphasis":"highlighted"}}},
+          {"from":"order-facade","to":"svc","emphasis":"faded","when":{"facade":{"emphasis":"highlighted"}}},
+          {"from":"ctrl","to":"pipe","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
+          {"from":"svc","to":"pricing","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+          {"from":"svc","to":"stock","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+          {"from":"svc","to":"invoice","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+          {"from":"pipe","to":"pricing","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
+          {"from":"pipe","to":"stock","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
+          {"from":"pipe","to":"invoice","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
           {"from":"svc","to":"repo"}
         ]
       }
@@ -654,13 +702,13 @@ O agente mostra o que entendeu antes de agir, para que o erro de entendimento se
 
 **O que o agente mostra.** O grafo dos componentes como o agente os entendeu e a lista de suposições que ele está fazendo.
 
-**Interação.** Cada suposição destaca no grafo os elementos a que se refere. O usuário aprova ou rejeita cada uma.
+**Interação.** O passo a passo percorre as suposições e destaca no grafo os elementos a que cada uma se refere. O usuário aprova ou rejeita cada uma.
 
 | | |
 |---|---|
 | Ferramenta | `present_decision` |
 | Componentes | `graph`, `steps` |
-| Mecanismos | destaque ligado |
+| Mecanismos | passo a passo |
 | Resposta | `approve` por item |
 | Fontes | leitura do código |
 | Ainda não implementado | nada |
@@ -717,21 +765,28 @@ Note: inventory is reserved AFTER payment authorisation, not before
           {
             "id": "a1",
             "label": "Payment authorisation is synchronous",
-            "detail": "checkout waits for Stripe before answering the browser",
-            "refs": ["pay","psp"]
+            "detail": "checkout waits for Stripe before answering the browser"
           },
-          {"id":"a2","label":"Capture happens later, in the fulfilment worker","refs":["ful"]},
+          {"id":"a2","label":"Capture happens later, in the fulfilment worker"},
           {
             "id": "a3",
             "label": "Inventory is reserved before payment",
-            "detail": "a failed payment releases the reservation",
-            "refs": ["inv"]
+            "detail": "a failed payment releases the reservation"
           },
-          {"id":"a4","label":"The confirmation email is sent by the worker, not the API","refs":["mail"]}
+          {"id":"a4","label":"The confirmation email is sent by the worker, not the API"}
         ]
       }
     ],
-    "response": {"type":"approve","of":"assumptions"}
+    "response": {"type":"approve","of":"assumptions"},
+    "walkthrough": [
+      {
+        "text": "Payment authorisation is synchronous: checkout waits for Stripe before answering the browser.",
+        "focus": ["a1","pay","psp"]
+      },
+      {"text":"Capture happens later, in the fulfilment worker.","focus":["a2","ful"]},
+      {"text":"Inventory is reserved before payment: a failed payment releases the reservation.","focus":["a3","inv"]},
+      {"text":"The confirmation email is sent by the worker, not the API.","focus":["a4","mail"]}
+    ]
   }
 }
 ```
@@ -754,7 +809,7 @@ Note: inventory is reserved AFTER payment authorisation, not before
 |---|---|
 | Ferramenta | `present_view` |
 | Componentes | `graph` |
-| Mecanismos | lentes, marcadores `change` e `status`, perguntar sobre isto |
+| Mecanismos | estados (lentes), marcadores `change` e `status`, perguntar sobre isto |
 | Resposta | nenhuma |
 | Fontes | leitura do código, enum de status no schema |
 | Ainda não implementado | nada |
@@ -782,22 +837,100 @@ Note: inventory is reserved AFTER payment authorisation, not before
         "variant": "state",
         "direction": "LR",
         "nodes": [
-          {"id":"trial","label":"trialing","in":["happy"]},
-          {"id":"active","label":"active","in":["happy","dunning","cancel","pause"]},
-          {"id":"pastdue","label":"past_due","in":["dunning"]},
-          {"id":"unpaid","label":"unpaid","in":["dunning"],"status":"warn","note":"No transition leaves this state"},
-          {"id":"paused","label":"paused","in":["pause"],"change":"added"},
-          {"id":"canceled","label":"canceled","in":["cancel","dunning"]}
+          {"id":"trial","label":"trialing","emphasis":"faded","when":{"happy":{"emphasis":"highlighted"}}},
+          {
+            "id": "active",
+            "label": "active",
+            "emphasis": "faded",
+            "when": {
+              "happy": {"emphasis":"highlighted"},
+              "dunning": {"emphasis":"highlighted"},
+              "cancel": {"emphasis":"highlighted"},
+              "pause": {"emphasis":"highlighted"}
+            }
+          },
+          {"id":"pastdue","label":"past_due","emphasis":"faded","when":{"dunning":{"emphasis":"highlighted"}}},
+          {
+            "id": "unpaid",
+            "label": "unpaid",
+            "status": "warn",
+            "note": "No transition leaves this state",
+            "emphasis": "faded",
+            "when": {"dunning":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "paused",
+            "label": "paused",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"pause":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "canceled",
+            "label": "canceled",
+            "emphasis": "faded",
+            "when": {"cancel":{"emphasis":"highlighted"},"dunning":{"emphasis":"highlighted"}}
+          }
         ],
         "edges": [
-          {"from":"trial","to":"active","label":"first charge","in":["happy"]},
-          {"from":"active","to":"pastdue","label":"charge failed","in":["dunning"]},
-          {"from":"pastdue","to":"active","label":"retry ok","in":["dunning"]},
-          {"from":"pastdue","to":"unpaid","label":"3 retries","in":["dunning"]},
-          {"from":"active","to":"canceled","label":"user cancels","in":["cancel"]},
-          {"from":"trial","to":"canceled","label":"trial ends","in":["cancel"]},
-          {"from":"active","to":"paused","label":"pause","in":["pause"],"change":"added"},
-          {"from":"paused","to":"active","label":"resume","in":["pause"],"change":"added"}
+          {
+            "from": "trial",
+            "to": "active",
+            "label": "first charge",
+            "emphasis": "faded",
+            "when": {"happy":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "active",
+            "to": "pastdue",
+            "label": "charge failed",
+            "emphasis": "faded",
+            "when": {"dunning":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "pastdue",
+            "to": "active",
+            "label": "retry ok",
+            "emphasis": "faded",
+            "when": {"dunning":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "pastdue",
+            "to": "unpaid",
+            "label": "3 retries",
+            "emphasis": "faded",
+            "when": {"dunning":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "active",
+            "to": "canceled",
+            "label": "user cancels",
+            "emphasis": "faded",
+            "when": {"cancel":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "trial",
+            "to": "canceled",
+            "label": "trial ends",
+            "emphasis": "faded",
+            "when": {"cancel":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "active",
+            "to": "paused",
+            "label": "pause",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"pause":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "paused",
+            "to": "active",
+            "label": "resume",
+            "change": "added",
+            "emphasis": "faded",
+            "when": {"pause":{"emphasis":"highlighted"}}
+          }
         ]
       }
     ]
@@ -817,13 +950,13 @@ Note: inventory is reserved AFTER payment authorisation, not before
 
 **O que o agente mostra.** As entidades com campos adicionados e alterados, e a sequência de migrações para aprovar uma a uma.
 
-**Interação.** Cada migração destaca as tabelas que toca.
+**Interação.** O passo a passo percorre as migrações e destaca as tabelas que cada uma toca.
 
 | | |
 |---|---|
 | Ferramenta | `present_decision` |
 | Componentes | `graph`, `steps` |
-| Mecanismos | marcadores `change`, destaque ligado |
+| Mecanismos | marcadores `change`, passo a passo |
 | Resposta | `approve` por item |
 | Fontes | schema atual, leitura dos models |
 | Ainda não implementado | nada |
@@ -880,19 +1013,20 @@ Note: keep projects.owner_id for one release
         "id": "migrations",
         "label": "Migrations, in order",
         "items": [
-          {"id":"m1","label":"Create organisations and memberships","refs":["orgs","members"],"meta":"additive"},
-          {
-            "id": "m2",
-            "label": "Backfill: one personal organisation per user",
-            "refs": ["orgs","members","users"],
-            "meta": "~40k rows"
-          },
-          {"id":"m3","label":"Add projects.org_id and backfill from owner","refs":["projects"],"meta":"additive"},
-          {"id":"m4","label":"Drop projects.owner_id","refs":["projects"],"meta":"destructive","change":"removed"}
+          {"id":"m1","label":"Create organisations and memberships","meta":"additive"},
+          {"id":"m2","label":"Backfill: one personal organisation per user","meta":"~40k rows"},
+          {"id":"m3","label":"Add projects.org_id and backfill from owner","meta":"additive"},
+          {"id":"m4","label":"Drop projects.owner_id","meta":"destructive","change":"removed"}
         ]
       }
     ],
-    "response": {"type":"approve","of":"migrations"}
+    "response": {"type":"approve","of":"migrations"},
+    "walkthrough": [
+      {"text":"Create organisations and memberships (additive).","focus":["m1","orgs","members"]},
+      {"text":"Backfill: one personal organisation per user (~40k rows).","focus":["m2","orgs","members","users"]},
+      {"text":"Add projects.org_id and backfill from owner (additive).","focus":["m3","projects"]},
+      {"text":"Drop projects.owner_id (destructive).","focus":["m4","projects"]}
+    ]
   }
 }
 ```
@@ -915,7 +1049,7 @@ Note: keep projects.owner_id for one release
 |---|---|
 | Ferramenta | `present_view` |
 | Componentes | `sequence` |
-| Mecanismos | lentes, perguntar sobre isto |
+| Mecanismos | estados (lentes), perguntar sobre isto |
 | Resposta | nenhuma |
 | Fontes | docs do provedor, leitura do código |
 | Ainda não implementado | nada |
@@ -947,11 +1081,41 @@ Note: keep projects.owner_id for one release
           {"from":"pay","to":"psp","label":"POST /intents"},
           {"from":"psp","to":"pay","label":"201 intent (pending)","reply":true},
           {"from":"api","to":"client","label":"202 { orderId, status: pending }","reply":true},
-          {"from":"psp","to":"pay","label":"webhook: intent.succeeded","in":["ok"]},
-          {"from":"pay","to":"api","label":"markPaid(orderId)","in":["ok"]},
-          {"from":"psp","to":"pay","label":"webhook: intent.failed","in":["declined"]},
-          {"from":"pay","to":"api","label":"markFailed(orderId, reason)","in":["declined"]},
-          {"from":"api","to":"api","label":"release stock","in":["declined"]}
+          {
+            "from": "psp",
+            "to": "pay",
+            "label": "webhook: intent.succeeded",
+            "emphasis": "faded",
+            "when": {"ok":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "pay",
+            "to": "api",
+            "label": "markPaid(orderId)",
+            "emphasis": "faded",
+            "when": {"ok":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "psp",
+            "to": "pay",
+            "label": "webhook: intent.failed",
+            "emphasis": "faded",
+            "when": {"declined":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "pay",
+            "to": "api",
+            "label": "markFailed(orderId, reason)",
+            "emphasis": "faded",
+            "when": {"declined":{"emphasis":"highlighted"}}
+          },
+          {
+            "from": "api",
+            "to": "api",
+            "label": "release stock",
+            "emphasis": "faded",
+            "when": {"declined":{"emphasis":"highlighted"}}
+          }
         ]
       }
     ]
@@ -1066,7 +1230,7 @@ Note: no admin UI for now, config file is enough
 
 **O que o agente mostra.** O grafo de módulos com o que muda e o que é afetado, e a árvore dos arquivos tocados.
 
-**Interação.** Focar um módulo destaca os arquivos dele na árvore.
+**Interação.** Cada arquivo tem o id do módulo a que pertence: focar um módulo destaca o arquivo dele na árvore, e vice-versa.
 
 | | |
 |---|---|
@@ -1123,46 +1287,29 @@ Note: keep `email` in the public API response as a deprecated alias
         "label": "Files",
         "nodes": [
           {"id":"root","label":"src/"},
-          {"id":"f-model","label":"models/user.ts","change":"changed","refs":["model"],"meta":"+6 −6","parent":"root"},
+          {"id":"model","label":"models/user.ts","change":"changed","meta":"+6 −6","parent":"root"},
+          {"id":"f-mig","label":"migrations/2026_11_rename_email.sql","change":"added","meta":"+9","parent":"root"},
+          {"id":"auth","label":"auth/ (4 files)","change":"changed","meta":"+11 −11","parent":"root"},
           {
-            "id": "f-mig",
-            "label": "migrations/2026_11_rename_email.sql",
-            "change": "added",
-            "refs": ["model"],
-            "meta": "+9",
-            "parent": "root"
-          },
-          {
-            "id": "f-auth",
-            "label": "auth/ (4 files)",
-            "change": "changed",
-            "refs": ["auth"],
-            "meta": "+11 −11",
-            "parent": "root"
-          },
-          {
-            "id": "f-api",
+            "id": "api",
             "label": "api/v2/users.ts",
             "change": "changed",
-            "refs": ["api"],
             "meta": "+3 −3",
             "note": "response shape changes",
             "parent": "root"
           },
           {
-            "id": "f-ev",
+            "id": "events",
             "label": "events/user-updated.ts",
             "change": "changed",
-            "refs": ["events"],
             "meta": "+2 −2",
             "note": "payload changes",
             "parent": "root"
           },
           {
-            "id": "f-exp",
+            "id": "export",
             "label": "jobs/crm-export.ts",
             "change": "affected",
-            "refs": ["export"],
             "note": "reads payload.email",
             "parent": "root"
           }
@@ -1400,7 +1547,7 @@ Selection for "Onboarding revamp — what fits in 15 points": i1, i2, i3, i5. No
 
 **O que o agente mostra.** A matriz de risco com os riscos posicionados e a lista de riscos com a mitigação proposta.
 
-**Interação.** Focar um risco na lista destaca a célula dele na matriz.
+**Interação.** A célula e o item da lista têm o mesmo id: focar um risco destaca a célula dele na matriz.
 
 | | |
 |---|---|
@@ -1441,17 +1588,17 @@ Selection for "Launch risks — multi-tenant release": r1, r2, r4. Not selected:
           {
             "id": "p-high",
             "label": "Likelihood: high",
-            "cells": [{"v":"","heat":2},{"v":"R4","heat":4,"refs":["r4"]},{"v":"R1","heat":5,"refs":["r1"]}]
+            "cells": [{"v":"","heat":2},{"id":"r4","v":"R4","heat":4},{"id":"r1","v":"R1","heat":5}]
           },
           {
             "id": "p-med",
             "label": "Likelihood: medium",
-            "cells": [{"v":"R5","heat":1,"refs":["r5"]},{"v":"","heat":2},{"v":"R2","heat":4,"refs":["r2"]}]
+            "cells": [{"id":"r5","v":"R5","heat":1},{"v":"","heat":2},{"id":"r2","v":"R2","heat":4}]
           },
           {
             "id": "p-low",
             "label": "Likelihood: low",
-            "cells": [{"v":"","heat":0},{"v":"R3","heat":1,"refs":["r3"]},{"v":"","heat":2}]
+            "cells": [{"v":"","heat":0},{"id":"r3","v":"R3","heat":1},{"v":"","heat":2}]
           }
         ]
       },
@@ -1550,7 +1697,7 @@ Decision on "Intermittent 502 on /api/reports": go with "Connection pool exhaust
         "nodes": [
           {"id":"sym","label":"502 from the load balancer, 02:00–02:20 UTC"},
           {"id":"h1","label":"Pod restarts during node autoscaling","meta":"unlikely · 10 min to test","parent":"sym"},
-          {"id":"h1a","label":"No scale events in the window on 5 of 7 days","status":"fail","parent":"h1"},
+          {"id":"h1a","label":"No scale events in the window on 5 of 7 days","status":"failed","parent":"h1"},
           {
             "id": "h2",
             "label": "Connection pool exhausted by the export job",
@@ -1640,7 +1787,7 @@ Decision on "Intermittent 502 on /api/reports": go with "Connection pool exhaust
             "label": "checkout-api",
             "phases": [
               {"id":"c-ok","label":"healthy","start":0,"duration":18,"status":"ok"},
-              {"id":"c-err","label":"5xx 22%","start":18,"duration":24,"status":"fail"},
+              {"id":"c-err","label":"5xx 22%","start":18,"duration":24,"status":"failed"},
               {"id":"c-ok2","label":"healthy","start":42,"duration":18,"status":"ok"}
             ]
           },
@@ -1657,7 +1804,7 @@ Decision on "Intermittent 502 on /api/reports": go with "Connection pool exhaust
         ],
         "events": [
           {"id":"e-deploy","at":11,"track":"payments","label":"deploy v3.41"},
-          {"id":"e-alert","at":21,"track":"checkout","label":"alert fired","status":"fail"},
+          {"id":"e-alert","at":21,"track":"checkout","label":"alert fired","status":"failed"},
           {"id":"e-rollback","at":40,"track":"payments","label":"rollback"}
         ]
       }
@@ -1696,7 +1843,7 @@ Decision on "Intermittent 502 on /api/reports": go with "Connection pool exhaust
 
 **O que o agente mostra.** O mapa de calor de erros por serviço e janela de tempo, e as evidências que sustentam a conclusão do agente.
 
-**Interação.** Cada evidência destaca a linha do serviço correspondente; clicar numa célula pergunta sobre aquele intervalo.
+**Interação.** Cada evidência tem o id do serviço de que fala: focar uma destaca a linha do serviço; clicar numa célula pergunta sobre aquele intervalo.
 
 | | |
 |---|---|
@@ -1795,22 +1942,19 @@ Decision on "Intermittent 502 on /api/reports": go with "Connection pool exhaust
         "label": "Evidence",
         "items": [
           {
-            "id": "ev1",
+            "id": "search",
             "label": "search: circuit breaker opens on Elasticsearch at 10:58",
-            "detail": "10:58:14 ERROR es-client CircuitBreakingException: [parent] Data too large",
-            "refs": ["search"]
+            "detail": "10:58:14 ERROR es-client CircuitBreakingException: [parent] Data too large"
           },
           {
-            "id": "ev2",
+            "id": "catalog",
             "label": "catalog-api: timeouts calling search, no fallback",
-            "detail": "11:02:40 ERROR catalog SearchClient timeout after 3000ms GET /search?q=…",
-            "refs": ["catalog"]
+            "detail": "11:02:40 ERROR catalog SearchClient timeout after 3000ms GET /search?q=…"
           },
           {
-            "id": "ev3",
+            "id": "web",
             "label": "web: category pages fail server-side rendering",
-            "detail": "11:03:05 ERROR ssr CategoryPage upstream 504 from catalog-api",
-            "refs": ["web"]
+            "detail": "11:03:05 ERROR ssr CategoryPage upstream 504 from catalog-api"
           }
         ],
         "mono": true
@@ -1905,7 +2049,7 @@ O agente encontra lacunas na especificação e as torna explícitas.
 
 **O que o agente mostra.** A matriz papel × ação com o que a especificação define e as células em aberto, e a lista das combinações que precisam de resposta.
 
-**Interação.** Marcar quais combinações em aberto devem ser permitidas; cada item destaca a célula correspondente.
+**Interação.** Marcar quais combinações em aberto devem ser permitidas; a célula e o item têm o mesmo id e se destacam juntos.
 
 | | |
 |---|---|
@@ -1966,8 +2110,8 @@ Selection for "Project permissions by role": q1, q3. Not selected: q2, q4.
               {"v":"allow","status":"ok"},
               {"v":"allow","status":"ok"},
               {"v":"allow","status":"ok"},
-              {"v":"?","status":"warn","refs":["q1"]},
-              {"v":"deny","status":"fail"}
+              {"id":"q1","v":"?","status":"warn"},
+              {"v":"deny","status":"failed"}
             ]
           },
           {
@@ -1976,10 +2120,10 @@ Selection for "Project permissions by role": q1, q3. Not selected: q2, q4.
             "cells": [
               {"v":"allow","status":"ok"},
               {"v":"allow","status":"ok"},
-              {"v":"?","status":"warn","refs":["q2"]},
-              {"v":"?","status":"warn","refs":["q3"]},
-              {"v":"deny","status":"fail"},
-              {"v":"deny","status":"fail"}
+              {"id":"q2","v":"?","status":"warn"},
+              {"id":"q3","v":"?","status":"warn"},
+              {"v":"deny","status":"failed"},
+              {"v":"deny","status":"failed"}
             ]
           },
           {
@@ -1987,11 +2131,11 @@ Selection for "Project permissions by role": q1, q3. Not selected: q2, q4.
             "label": "Guest",
             "cells": [
               {"v":"allow","status":"ok"},
-              {"v":"deny","status":"fail"},
-              {"v":"deny","status":"fail"},
-              {"v":"?","status":"warn","refs":["q4"]},
-              {"v":"deny","status":"fail"},
-              {"v":"deny","status":"fail"}
+              {"v":"deny","status":"failed"},
+              {"v":"deny","status":"failed"},
+              {"id":"q4","v":"?","status":"warn"},
+              {"v":"deny","status":"failed"},
+              {"v":"deny","status":"failed"}
             ]
           }
         ]
@@ -2078,12 +2222,12 @@ Selection for "Refund flow — test coverage": b3, b4, b6. Not selected: b1, b2,
           {
             "id": "b3",
             "label": "Refund after 30 days is rejected",
-            "cells": [{"v":"gap","status":"fail"},{"v":"gap","status":"fail"},{"v":"–"}]
+            "cells": [{"v":"gap","status":"failed"},{"v":"gap","status":"failed"},{"v":"–"}]
           },
           {
             "id": "b4",
             "label": "Refund when the provider times out",
-            "cells": [{"v":"–"},{"v":"gap","status":"fail"},{"v":"–"}]
+            "cells": [{"v":"–"},{"v":"gap","status":"failed"},{"v":"–"}]
           },
           {
             "id": "b5",
@@ -2093,7 +2237,7 @@ Selection for "Refund flow — test coverage": b3, b4, b6. Not selected: b1, b2,
           {
             "id": "b6",
             "label": "Two refunds for the same order at once",
-            "cells": [{"v":"–"},{"v":"gap","status":"fail"},{"v":"–"}]
+            "cells": [{"v":"–"},{"v":"gap","status":"failed"},{"v":"–"}]
           }
         ]
       }
@@ -2125,7 +2269,7 @@ Histórico, conflitos e transporte de commits entre branches.
 |---|---|
 | Ferramenta | `present_view` |
 | Componentes | `graph` |
-| Mecanismos | lentes, perguntar sobre isto |
+| Mecanismos | estados (lentes), perguntar sobre isto |
 | Resposta | nenhuma |
 | Fontes | `git log --graph`, `git cherry`, `git diff --stat` |
 | Ainda não implementado | nada |
@@ -2150,12 +2294,33 @@ Histórico, conflitos e transporte de commits entre branches.
         "nodes": [
           {"id":"c1","label":"a1f3","lane":"main","note":"base"},
           {"id":"c2","label":"b72c","lane":"main","note":"feat: filters"},
-          {"id":"r1","label":"e901","lane":"rel","note":"bump 2.4.0","in":["overlap"]},
-          {"id":"c3","label":"c9d0","lane":"main","note":"fix: tax rounding","in":["missing","overlap"]},
+          {
+            "id": "r1",
+            "label": "e901",
+            "lane": "rel",
+            "note": "bump 2.4.0",
+            "emphasis": "faded",
+            "when": {"overlap":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "c3",
+            "label": "c9d0",
+            "lane": "main",
+            "note": "fix: tax rounding",
+            "emphasis": "faded",
+            "when": {"missing":{"emphasis":"highlighted"},"overlap":{"emphasis":"highlighted"}}
+          },
           {"id":"f1","label":"9a2e","lane":"feat","note":"invoice PDF"},
           {"id":"c4","label":"d44b","lane":"main","note":"chore: deps"},
           {"id":"r2","label":"f0a7","lane":"rel","note":"hotfix: login"},
-          {"id":"c5","label":"17ce","lane":"main","note":"fix: csv encoding","in":["missing"]},
+          {
+            "id": "c5",
+            "label": "17ce",
+            "lane": "main",
+            "note": "fix: csv encoding",
+            "emphasis": "faded",
+            "when": {"missing":{"emphasis":"highlighted"}}
+          },
           {"id":"f2","label":"3bd1","lane":"feat","note":"invoice email"},
           {"id":"c6","label":"88f2","lane":"main","note":"merge feat"}
         ],
@@ -2346,7 +2511,7 @@ Note: pick 4e1a and resolve the conflict by hand, without the filters feature
             "id": "k4",
             "label": "fix: empty state when filters return nothing",
             "detail": "4e1a · conflicts in OrdersList.tsx unless b72c is picked",
-            "status": "fail",
+            "status": "failed",
             "meta": "+18 −3"
           }
         ],
@@ -2405,7 +2570,7 @@ Estado de pipelines e ambientes, como retrato montado pelo agente.
           {"id":"types","label":"typecheck","status":"ok"},
           {"id":"unit","label":"unit tests","status":"ok"},
           {"id":"build","label":"build image","status":"ok"},
-          {"id":"integ","label":"integration tests","status":"fail"},
+          {"id":"integ","label":"integration tests","status":"failed"},
           {"id":"e2e","label":"e2e","status":"running"},
           {"id":"stg","label":"deploy staging","status":"pending"},
           {"id":"smoke","label":"smoke","status":"pending"},
@@ -2491,7 +2656,7 @@ Estado de pipelines e ambientes, como retrato montado pelo agente.
           {
             "id": "payments",
             "label": "payments",
-            "cells": ["3.42.0",{"v":"3.42.0","status":"fail"},{"v":"3.40.0","change":"changed"},"failed in staging"]
+            "cells": ["3.42.0",{"v":"3.42.0","status":"failed"},{"v":"3.40.0","change":"changed"},"failed in staging"]
           },
           {"id":"search","label":"search","cells":["2.8.0","2.8.0","2.8.0","—"]},
           {
@@ -2570,14 +2735,14 @@ Selection for "Flaky tests on main, last 10 runs": ft1, ft3. Not selected: ft2, 
             "label": "auth › refresh token rotation",
             "cells": [
               {"v":"✓","status":"ok"},
-              {"v":"✗","status":"fail"},
+              {"v":"✗","status":"failed"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
-              {"v":"✗","status":"fail"},
+              {"v":"✗","status":"failed"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
-              {"v":"✗","status":"fail"},
+              {"v":"✗","status":"failed"},
               {"v":"✓","status":"ok"},
               "flaky"
             ]
@@ -2594,9 +2759,9 @@ Selection for "Flaky tests on main, last 10 runs": ft1, ft3. Not selected: ft2, 
               {"v":"–"},
               {"v":"–"},
               {"v":"–"},
-              {"v":"✗","status":"fail"},
-              {"v":"✗","status":"fail"},
-              {"v":"real","status":"fail"}
+              {"v":"✗","status":"failed"},
+              {"v":"✗","status":"failed"},
+              {"v":"real","status":"failed"}
             ]
           },
           {
@@ -2605,13 +2770,13 @@ Selection for "Flaky tests on main, last 10 runs": ft1, ft3. Not selected: ft2, 
             "cells": [
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
-              {"v":"✗","status":"fail"},
+              {"v":"✗","status":"failed"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
-              {"v":"✗","status":"fail"},
+              {"v":"✗","status":"failed"},
               {"v":"✓","status":"ok"},
               "flaky"
             ]
@@ -2624,7 +2789,7 @@ Selection for "Flaky tests on main, last 10 runs": ft1, ft3. Not selected: ft2, 
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
-              {"v":"✗","status":"fail"},
+              {"v":"✗","status":"failed"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
               {"v":"✓","status":"ok"},
@@ -2732,7 +2897,7 @@ Note: SSO goes to a separate epic
 |---|---|
 | Ferramenta | `present_view` |
 | Componentes | `graph` |
-| Mecanismos | lentes, marcadores `status`, perguntar sobre isto |
+| Mecanismos | estados (lentes), marcadores `status`, perguntar sobre isto |
 | Resposta | nenhuma |
 | Fontes | MCP do Jira / Linear |
 | Ainda não implementado | nada |
@@ -2754,25 +2919,67 @@ Note: SSO goes to a separate epic
         "type": "graph",
         "direction": "LR",
         "nodes": [
-          {"id":"o10","label":"ORG-10 schema","status":"ok","in":["critical"]},
-          {"id":"o11","label":"ORG-11 backfill","status":"ok","in":["critical"]},
-          {"id":"o12","label":"ORG-12 scope queries","status":"running","in":["critical"]},
+          {
+            "id": "o10",
+            "label": "ORG-10 schema",
+            "status": "ok",
+            "emphasis": "faded",
+            "when": {"critical":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "o11",
+            "label": "ORG-11 backfill",
+            "status": "ok",
+            "emphasis": "faded",
+            "when": {"critical":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "o12",
+            "label": "ORG-12 scope queries",
+            "status": "running",
+            "emphasis": "faded",
+            "when": {"critical":{"emphasis":"highlighted"}}
+          },
           {"id":"o13","label":"ORG-13 switcher UI","status":"running"},
-          {"id":"o14","label":"ORG-14 RLS policies","status":"pending","in":["critical","unassigned"]},
+          {
+            "id": "o14",
+            "label": "ORG-14 RLS policies",
+            "status": "pending",
+            "emphasis": "faded",
+            "when": {"critical":{"emphasis":"highlighted"},"unassigned":{"emphasis":"highlighted"}}
+          },
           {"id":"o15","label":"ORG-15 invites","status":"running"},
-          {"id":"o16","label":"ORG-16 invite email","status":"pending","in":["unassigned"]},
-          {"id":"o17","label":"ORG-17 security review","status":"pending","in":["critical"]},
-          {"id":"o18","label":"ORG-18 release","status":"pending","in":["critical"]}
+          {
+            "id": "o16",
+            "label": "ORG-16 invite email",
+            "status": "pending",
+            "emphasis": "faded",
+            "when": {"unassigned":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "o17",
+            "label": "ORG-17 security review",
+            "status": "pending",
+            "emphasis": "faded",
+            "when": {"critical":{"emphasis":"highlighted"}}
+          },
+          {
+            "id": "o18",
+            "label": "ORG-18 release",
+            "status": "pending",
+            "emphasis": "faded",
+            "when": {"critical":{"emphasis":"highlighted"}}
+          }
         ],
         "edges": [
-          {"from":"o10","to":"o11","in":["critical"]},
-          {"from":"o11","to":"o12","in":["critical"]},
-          {"from":"o12","to":"o14","in":["critical"]},
+          {"from":"o10","to":"o11","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+          {"from":"o11","to":"o12","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+          {"from":"o12","to":"o14","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
           {"from":"o12","to":"o13"},
           {"from":"o10","to":"o15"},
           {"from":"o15","to":"o16"},
-          {"from":"o14","to":"o17","in":["critical"]},
-          {"from":"o17","to":"o18","in":["critical"]},
+          {"from":"o14","to":"o17","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
+          {"from":"o17","to":"o18","emphasis":"faded","when":{"critical":{"emphasis":"highlighted"}}},
           {"from":"o13","to":"o18"},
           {"from":"o16","to":"o18"}
         ]
@@ -2800,7 +3007,7 @@ Note: SSO goes to a separate epic
 |---|---|
 | Ferramenta | `present_view` |
 | Componentes | `board` |
-| Mecanismos | lentes, marcadores `status`, perguntar sobre isto |
+| Mecanismos | estados (lentes), marcadores `status`, perguntar sobre isto |
 | Resposta | nenhuma |
 | Fontes | MCP do Jira / Linear |
 | Ainda não implementado | nada |
@@ -2835,8 +3042,21 @@ Note: SSO goes to a separate epic
             "limit": 4,
             "items": [
               {"id":"ORG-12","label":"ORG-12 Scope queries","tag":"story · 5 pts"},
-              {"id":"ORG-15","label":"ORG-15 Invites","tag":"story · 8 pts · 4d here","status":"warn","in":["stale"]},
-              {"id":"BUG-311","label":"BUG-311 Refund tax","tag":"bug · 1 day","in":["bugs"]}
+              {
+                "id": "ORG-15",
+                "label": "ORG-15 Invites",
+                "tag": "story · 8 pts · 4d here",
+                "status": "warn",
+                "emphasis": "faded",
+                "when": {"stale":{"emphasis":"highlighted"}}
+              },
+              {
+                "id": "BUG-311",
+                "label": "BUG-311 Refund tax",
+                "tag": "bug · 1 day",
+                "emphasis": "faded",
+                "when": {"bugs":{"emphasis":"highlighted"}}
+              }
             ]
           },
           {
@@ -2850,7 +3070,8 @@ Note: SSO goes to a separate epic
                 "label": "BUG-305 CSV encoding",
                 "tag": "bug · 5d here",
                 "status": "warn",
-                "in": ["stale","bugs"]
+                "emphasis": "faded",
+                "when": {"stale":{"emphasis":"highlighted"},"bugs":{"emphasis":"highlighted"}}
               },
               {"id":"ORG-19","label":"ORG-19 Audit log","tag":"story · 3 pts"}
             ]
@@ -2861,7 +3082,14 @@ Note: SSO goes to a separate epic
             "items": [
               {"id":"ORG-10","label":"ORG-10 Schema","tag":"story · 5 pts","status":"ok"},
               {"id":"ORG-11","label":"ORG-11 Backfill","tag":"story · 5 pts","status":"ok"},
-              {"id":"BUG-298","label":"BUG-298 Login loop","tag":"bug","status":"ok","in":["bugs"]}
+              {
+                "id": "BUG-298",
+                "label": "BUG-298 Login loop",
+                "tag": "bug",
+                "status": "ok",
+                "emphasis": "faded",
+                "when": {"bugs":{"emphasis":"highlighted"}}
+              }
             ]
           }
         ]
@@ -2961,7 +3189,7 @@ Note: SSO goes to a separate epic
             "cells": [
               {"v":"In review","status":"running"},
               {"v":"#476 open","status":"running"},
-              {"v":"failing","status":"fail"},
+              {"v":"failing","status":"failed"},
               {"v":"—"}
             ]
           }
@@ -3029,7 +3257,7 @@ Usos fora do ciclo pergunta-resposta: transparência do agente, explicação e a
             "id": "st6",
             "label": "Organisation switcher in the web app",
             "detail": "blocked: needs the /me/organisations endpoint from step 4 to pass its test",
-            "status": "warn",
+            "status": "blocked",
             "meta": "subagent: web"
           },
           {"id":"st7","label":"Run the full suite and write the PR description","status":"pending"}
@@ -3041,7 +3269,7 @@ Usos fora do ciclo pergunta-resposta: transparência do agente, explicação e a
         "columns": [{"id":"task","label":"Working on"},{"id":"state","label":"State"},{"id":"files","label":"Files touched"}],
         "rows": [
           {"id":"sa1","label":"tests","cells":["test/projects/*.test.ts",{"v":"running","status":"running"},"23"]},
-          {"id":"sa2","label":"web","cells":["web/components/OrgSwitcher.tsx",{"v":"waiting","status":"warn"},"4"]},
+          {"id":"sa2","label":"web","cells":["web/components/OrgSwitcher.tsx",{"v":"waiting","status":"blocked"},"4"]},
           {"id":"sa3","label":"docs","cells":["docs/api.md",{"v":"done","status":"ok"},"2"]}
         ]
       }
@@ -3186,14 +3414,14 @@ Note: pdfkit goes with the invoices branch, which already needs 0.15
           {
             "id": "dep1a",
             "label": "body-parser 1.20.1",
-            "status": "fail",
+            "status": "failed",
             "note": "CVE-2024-45590 · high · DoS",
             "parent": "dep1"
           },
           {
             "id": "dep1b",
             "label": "path-to-regexp 0.1.7",
-            "status": "fail",
+            "status": "failed",
             "note": "CVE-2024-45296 · high · ReDoS",
             "parent": "dep1"
           },
@@ -3201,7 +3429,7 @@ Note: pdfkit goes with the invoices branch, which already needs 0.15
           {
             "id": "dep2a",
             "label": "crypto-js 4.1.1",
-            "status": "fail",
+            "status": "failed",
             "note": "CVE-2023-46233 · critical · weak PBKDF2",
             "parent": "dep2"
           },
@@ -3263,7 +3491,7 @@ Note: pdfkit goes with the invoices branch, which already needs 0.15
           {"id":"k1","label":"DATABASE_URL","cells":["dev-db","stg-db","prod-db"]},
           {"id":"k2","label":"REPLICAS","cells":["1","2","6"]},
           {"id":"k3","label":"RATE_LIMIT_ENABLED","cells":["true","true",{"v":"false","change":"changed"}]},
-          {"id":"k4","label":"REDIS_URL","cells":["set","set",{"v":"missing","status":"fail"}]},
+          {"id":"k4","label":"REDIS_URL","cells":["set","set",{"v":"missing","status":"failed"}]},
           {"id":"k5","label":"PG_POOL_MAX","cells":["10","10",{"v":"10","status":"warn"}]},
           {"id":"k6","label":"LOG_LEVEL","cells":[{"v":"debug","change":"changed"},"info","info"]}
         ],
@@ -3348,7 +3576,7 @@ Note: pdfkit goes with the invoices branch, which already needs 0.15
             "value": 3610,
             "valueLabel": "3610 ms",
             "meta": "1.9M of 14M rows",
-            "status": "fail",
+            "status": "failed",
             "parent": "n3"
           },
           {"id":"n5","label":"Hash","value":85,"valueLabel":"85 ms","meta":"41k rows","parent":"n3"},
@@ -3385,8 +3613,8 @@ Note: pdfkit goes with the invoices branch, which already needs 0.15
 
 - **Sete componentes atendem a maioria dos cenários.** `sequence`, `quadrant`, `board` e `chart` aparecem em poucos casos cada; existem porque nesses casos nenhum outro serve.
 - **`matrix` e `steps` são os mais reutilizados.** Aparecem em quase todos os momentos, de permissões a progresso do agente.
-- **Os marcadores fazem o trabalho de vários componentes.** Diff, impacto, status de pipeline e cobertura de testes são um grafo, uma árvore ou uma matriz com `change` ou `status`.
-- **`refs` é o que liga blocos de natureza diferente.** Uma suposição que aponta para nós do grafo, um risco que aponta para a célula da matriz.
+- **As propriedades fazem o trabalho de vários componentes.** Diff, impacto, status de pipeline e cobertura de testes são um grafo, uma árvore ou uma matriz com `change` ou `status`.
+- **Estado é a única relação declarada.** Uma opção que muda onde fica o gargalo, um antes e depois, três momentos de um incidente: tudo é o mesmo elemento com `when`. Ligar blocos diferentes não exige declaração: basta o mesmo id.
 - **O passo a passo é o mecanismo das conclusões.** Sempre que o agente tem algo a concluir (incidente, pipeline, plano de query), a narrativa em passos carrega a conclusão e a view carrega a evidência.
 
 ## 8. Limites e pontos fracos

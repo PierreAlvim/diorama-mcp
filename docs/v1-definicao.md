@@ -184,3 +184,19 @@ Continua por fazer: detalhe sob demanda, filtro, atualizar; respostas `rank` e `
 
 Verificação: os 36 cenários de [cenarios.md](cenarios.md) são validados contra o schema e rodam de ponta a ponta num host de teste (`npm test`). Falta a validação no cliente real.
 
+## 16. Revisão do modelo de relações (pós-beta)
+
+As seções 7 e 8 descrevem `in` e `refs`. Esse modelo foi substituído; o que vale é isto:
+
+- **Três propriedades em qualquer elemento**, mais `note`: `change`, `status` (`ok`, `warn`, `failed`, `pending`, `running`, `blocked`, `skipped`) e `emphasis` (`normal`, `highlighted`, `faded`).
+- **Estados.** Cada lente e cada cartão é um estado nomeado. Havendo estados em uso, um está sempre ativo: o cartão recomendado, senão o primeiro estado.
+- **`when`** é a única relação declarada: `when: { <estado>: { propriedades } }`. O valor fora do `when` vale em todos os outros estados.
+- **`in` e `refs` foram removidos.** Um elemento exclusivo de uma opção é `emphasis: "faded"` com `when: { opção: { emphasis: "highlighted" } }`.
+- **Id igual continua valendo como comportamento da view**, sem declaração: passar o mouse num elemento destaca os de mesmo id nos outros blocos. Um item de `tradeoff` ou uma trilha de `timeline` com o id de um cartão é aquela opção.
+- **O passo do `walkthrough`** ganhou `state` (troca o estado) e manteve `focus` (holofote local, agora opcional).
+- **Estado e holofote são eixos independentes**: o estado diz o que o elemento é; o holofote (hover ou `focus`) diz para onde olhar. O hover nunca apaga o que o agente destacou.
+
+Motivo: as três relações anteriores não tinham regra verificável (`in` aceitava qualquer valor, `refs` não era conferido, ids de lente e de elemento colidiam), e o estado ativo só mudava ênfase. Com `when`, uma opção pode mudar o status de um componente ("neste caminho o Postgres é o gargalo"), e uma narrativa pode percorrer momentos diferentes da mesma view.
+
+No JSON Schema das ferramentas, `when` é declarado de forma frouxa (mapa de mapas de texto) para não repetir as propriedades em cada elemento; chaves e valores são conferidos pelo lint do servidor, que devolve ao modelo o que corrigir.
+

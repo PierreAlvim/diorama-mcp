@@ -1,4 +1,4 @@
-// Scenario catalogue, part A. Prose in pt-BR (discovery), payloads in English.
+// Scenario catalogue. Prose in pt-BR (discovery), payloads in English.
 // `args` is the tool call; `sample` is the example state used by wireframes and e2e tests (never sent by the agent).
 export default [
   {
@@ -8,9 +8,9 @@ export default [
     "situation": "O agente precisa adicionar notificações em tempo real e há três caminhos viáveis, cada um com custo operacional diferente.",
     "why": "Em texto, cada alternativa vira um parágrafo e a comparação fica na cabeça do usuário. Lado a lado, com o fluxo de cada uma destacado, a diferença estrutural aparece.",
     "shows": "Cartões das alternativas, notas por critério com o motivo de cada nota, e um único grafo em que cada alternativa acende os seus nós.",
-    "interaction": "Passar o mouse num cartão troca a lente: o grafo destaca o caminho daquela alternativa e a tabela mostra os motivos dela.",
+    "interaction": "Passar o mouse num cartão troca o estado da view: o grafo destaca o caminho daquela alternativa, marca o que ela acrescenta e onde passa a ficar a pressão (pods da API no SSE, Postgres no polling), e a tabela mostra os motivos dela.",
     "sources": ["leitura do código","docs do load balancer"],
-    "mechanisms": ["lentes (opções)","destaque ligado"],
+    "mechanisms": ["estados (opções)","propriedades por estado (`when`)"],
     "tool": "present_decision",
     "args": {
       "title": "Real-time notifications",
@@ -81,22 +81,33 @@ export default [
           "nodes": [
             {"id":"browser","label":"Browser"},
             {"id":"alb","label":"ALB"},
-            {"id":"api","label":"API pods"},
-            {"id":"gw","label":"WS gateway","in":["ws"]},
-            {"id":"redis","label":"Redis pub/sub","in":["ws","sse"]},
+            {"id":"api","label":"API pods","when":{"sse":{"status":"warn","note":"one open connection per tab"}}},
+            {"id":"gw","label":"WS gateway","emphasis":"faded","when":{"ws":{"emphasis":"highlighted","change":"added","note":"new service to run"}}},
+            {
+              "id": "redis",
+              "label": "Redis pub/sub",
+              "emphasis": "faded",
+              "when": {"ws":{"emphasis":"highlighted","change":"added"},"sse":{"emphasis":"highlighted","change":"added"}}
+            },
             {"id":"worker","label":"Notifier worker"},
-            {"id":"db","label":"Postgres"}
+            {"id":"db","label":"Postgres","when":{"poll":{"status":"warn","note":"10x the read load"}}}
           ],
           "edges": [
             {"from":"browser","to":"alb"},
-            {"from":"alb","to":"api","label":"SSE stream","in":["sse"]},
-            {"from":"alb","to":"api","label":"GET every 3s","in":["poll"]},
-            {"from":"alb","to":"gw","label":"ws://","in":["ws"]},
-            {"from":"worker","to":"redis","label":"publish","in":["ws","sse"]},
-            {"from":"redis","to":"api","in":["sse"]},
-            {"from":"redis","to":"gw","in":["ws"]},
+            {"from":"alb","to":"api","label":"SSE stream","emphasis":"faded","when":{"sse":{"emphasis":"highlighted"}}},
+            {"from":"alb","to":"api","label":"GET every 3s","emphasis":"faded","when":{"poll":{"emphasis":"highlighted"}}},
+            {"from":"alb","to":"gw","label":"ws://","emphasis":"faded","when":{"ws":{"emphasis":"highlighted"}}},
+            {
+              "from": "worker",
+              "to": "redis",
+              "label": "publish",
+              "emphasis": "faded",
+              "when": {"ws":{"emphasis":"highlighted"},"sse":{"emphasis":"highlighted"}}
+            },
+            {"from":"redis","to":"api","emphasis":"faded","when":{"sse":{"emphasis":"highlighted"}}},
+            {"from":"redis","to":"gw","emphasis":"faded","when":{"ws":{"emphasis":"highlighted"}}},
             {"from":"worker","to":"db"},
-            {"from":"api","to":"db","label":"query","in":["poll"]}
+            {"from":"api","to":"db","label":"query","emphasis":"faded","when":{"poll":{"emphasis":"highlighted"}}}
           ]
         }
       ],
@@ -113,7 +124,7 @@ export default [
     "shows": "Um cartão por escopo e uma trilha de fases por escopo na mesma escala de tempo.",
     "interaction": "O cartão em foco destaca a trilha correspondente.",
     "sources": ["ticket de origem","leitura do código"],
-    "mechanisms": ["lentes (opções)","destaque ligado"],
+    "mechanisms": ["estados (opções)","destaque ligado"],
     "tool": "present_decision",
     "args": {
       "title": "Report export scope",
@@ -188,7 +199,7 @@ export default [
     "shows": "Cartões das estratégias e uma linha do tempo com as fases de cada uma, com o ponto sem volta marcado.",
     "interaction": "O cartão em foco destaca a trilha da estratégia.",
     "sources": ["leitura do código","métricas de sessões ativas"],
-    "mechanisms": ["lentes (opções)","destaque ligado"],
+    "mechanisms": ["estados (opções)","destaque ligado"],
     "tool": "present_decision",
     "args": {
       "title": "Session store migration",
@@ -271,7 +282,7 @@ export default [
     "shows": "Cartões das estratégias e o grafo de módulos com marcadores de mudança, filtrado pela estratégia em foco.",
     "interaction": "Cada cartão é uma lente sobre o grafo: mostra os módulos novos e os que somem naquela estratégia.",
     "sources": ["leitura do código","grafo de imports"],
-    "mechanisms": ["lentes (opções)","marcadores `change`"],
+    "mechanisms": ["estados (opções)","marcadores `change`"],
     "tool": "present_decision",
     "args": {
       "title": "Breaking up OrderService",
@@ -318,24 +329,42 @@ export default [
           "nodes": [
             {"id":"ctrl","label":"OrderController"},
             {"id":"svc","label":"OrderService","change":"changed"},
-            {"id":"facade","label":"OrderFacade","change":"added","in":["facade"]},
-            {"id":"pricing","label":"Pricing","change":"added","in":["domain","rewrite"]},
-            {"id":"stock","label":"Stock","change":"added","in":["domain","rewrite"]},
-            {"id":"invoice","label":"Invoicing","change":"added","in":["domain","rewrite"]},
-            {"id":"pipe","label":"OrderPipeline","change":"added","in":["rewrite"]},
+            {"id":"order-facade","label":"OrderFacade","change":"added"},
+            {
+              "id": "pricing",
+              "label": "Pricing",
+              "change": "added",
+              "emphasis": "faded",
+              "when": {"domain":{"emphasis":"highlighted"},"rewrite":{"emphasis":"highlighted"}}
+            },
+            {
+              "id": "stock",
+              "label": "Stock",
+              "change": "added",
+              "emphasis": "faded",
+              "when": {"domain":{"emphasis":"highlighted"},"rewrite":{"emphasis":"highlighted"}}
+            },
+            {
+              "id": "invoice",
+              "label": "Invoicing",
+              "change": "added",
+              "emphasis": "faded",
+              "when": {"domain":{"emphasis":"highlighted"},"rewrite":{"emphasis":"highlighted"}}
+            },
+            {"id":"pipe","label":"OrderPipeline","change":"added","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
             {"id":"repo","label":"OrderRepo"}
           ],
           "edges": [
-            {"from":"ctrl","to":"svc","in":["domain"]},
-            {"from":"ctrl","to":"facade","in":["facade"]},
-            {"from":"facade","to":"svc","in":["facade"]},
-            {"from":"ctrl","to":"pipe","in":["rewrite"]},
-            {"from":"svc","to":"pricing","in":["domain"]},
-            {"from":"svc","to":"stock","in":["domain"]},
-            {"from":"svc","to":"invoice","in":["domain"]},
-            {"from":"pipe","to":"pricing","in":["rewrite"]},
-            {"from":"pipe","to":"stock","in":["rewrite"]},
-            {"from":"pipe","to":"invoice","in":["rewrite"]},
+            {"from":"ctrl","to":"svc","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+            {"from":"ctrl","to":"order-facade","emphasis":"faded","when":{"facade":{"emphasis":"highlighted"}}},
+            {"from":"order-facade","to":"svc","emphasis":"faded","when":{"facade":{"emphasis":"highlighted"}}},
+            {"from":"ctrl","to":"pipe","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
+            {"from":"svc","to":"pricing","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+            {"from":"svc","to":"stock","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+            {"from":"svc","to":"invoice","emphasis":"faded","when":{"domain":{"emphasis":"highlighted"}}},
+            {"from":"pipe","to":"pricing","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
+            {"from":"pipe","to":"stock","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
+            {"from":"pipe","to":"invoice","emphasis":"faded","when":{"rewrite":{"emphasis":"highlighted"}}},
             {"from":"svc","to":"repo"}
           ]
         }
@@ -387,9 +416,9 @@ export default [
     "situation": "Antes de mexer no checkout, o agente leu o código e montou um modelo de como ele funciona. Se o modelo estiver errado, tudo que vier depois estará errado.",
     "why": "O usuário corrige um diagrama em segundos; corrigir três parágrafos de descrição exige ler tudo.",
     "shows": "O grafo dos componentes como o agente os entendeu e a lista de suposições que ele está fazendo.",
-    "interaction": "Cada suposição destaca no grafo os elementos a que se refere. O usuário aprova ou rejeita cada uma.",
+    "interaction": "O passo a passo percorre as suposições e destaca no grafo os elementos a que cada uma se refere. O usuário aprova ou rejeita cada uma.",
     "sources": ["leitura do código"],
-    "mechanisms": ["destaque ligado"],
+    "mechanisms": ["passo a passo"],
     "tool": "present_decision",
     "args": {
       "title": "How checkout works today",
@@ -425,21 +454,22 @@ export default [
           "label": "What I am assuming",
           "numbered": false,
           "items": [
-            {
-              "id": "a1",
-              "label": "Payment authorisation is synchronous",
-              "detail": "checkout waits for Stripe before answering the browser",
-              "refs": ["pay","psp"]
-            },
-            {"id":"a2","label":"Capture happens later, in the fulfilment worker","refs":["ful"]},
-            {"id":"a3","label":"Inventory is reserved before payment","detail":"a failed payment releases the reservation","refs":["inv"]},
-            {"id":"a4","label":"The confirmation email is sent by the worker, not the API","refs":["mail"]}
+            {"id":"a1","label":"Payment authorisation is synchronous","detail":"checkout waits for Stripe before answering the browser"},
+            {"id":"a2","label":"Capture happens later, in the fulfilment worker"},
+            {"id":"a3","label":"Inventory is reserved before payment","detail":"a failed payment releases the reservation"},
+            {"id":"a4","label":"The confirmation email is sent by the worker, not the API"}
           ]
         }
       ],
-      "response": {"type":"approve","of":"assumptions"}
+      "response": {"type":"approve","of":"assumptions"},
+      "walkthrough": [
+        {"text":"Payment authorisation is synchronous: checkout waits for Stripe before answering the browser.","focus":["a1","pay","psp"]},
+        {"text":"Capture happens later, in the fulfilment worker.","focus":["a2","ful"]},
+        {"text":"Inventory is reserved before payment: a failed payment releases the reservation.","focus":["a3","inv"]},
+        {"text":"The confirmation email is sent by the worker, not the API.","focus":["a4","mail"]}
+      ]
     },
-    "sample": {"hover":"a3","picks":{"a1":"ok","a2":"ok","a3":"no","a4":"ok"},"note":"inventory is reserved AFTER payment authorisation, not before"}
+    "sample": {"step":2,"picks":{"a1":"ok","a2":"ok","a3":"no","a4":"ok"},"note":"inventory is reserved AFTER payment authorisation, not before"}
   },
   {
     "slug": "entity-lifecycle",
@@ -450,7 +480,7 @@ export default [
     "shows": "A máquina de estados da assinatura, com lentes para cada jornada e a transição proposta marcada como adição.",
     "interaction": "Alternar a lente isola o caminho feliz, a cobrança falha ou o cancelamento.",
     "sources": ["leitura do código","enum de status no schema"],
-    "mechanisms": ["lentes","marcadores `change` e `status`","perguntar sobre isto"],
+    "mechanisms": ["estados (lentes)","marcadores `change` e `status`","perguntar sobre isto"],
     "tool": "present_view",
     "args": {
       "title": "Subscription lifecycle",
@@ -467,22 +497,39 @@ export default [
           "variant": "state",
           "direction": "LR",
           "nodes": [
-            {"id":"trial","label":"trialing","in":["happy"]},
-            {"id":"active","label":"active","in":["happy","dunning","cancel","pause"]},
-            {"id":"pastdue","label":"past_due","in":["dunning"]},
-            {"id":"unpaid","label":"unpaid","in":["dunning"],"status":"warn","note":"No transition leaves this state"},
-            {"id":"paused","label":"paused","in":["pause"],"change":"added"},
-            {"id":"canceled","label":"canceled","in":["cancel","dunning"]}
+            {"id":"trial","label":"trialing","emphasis":"faded","when":{"happy":{"emphasis":"highlighted"}}},
+            {
+              "id": "active",
+              "label": "active",
+              "emphasis": "faded",
+              "when": {
+                "happy": {"emphasis":"highlighted"},
+                "dunning": {"emphasis":"highlighted"},
+                "cancel": {"emphasis":"highlighted"},
+                "pause": {"emphasis":"highlighted"}
+              }
+            },
+            {"id":"pastdue","label":"past_due","emphasis":"faded","when":{"dunning":{"emphasis":"highlighted"}}},
+            {
+              "id": "unpaid",
+              "label": "unpaid",
+              "status": "warn",
+              "note": "No transition leaves this state",
+              "emphasis": "faded",
+              "when": {"dunning":{"emphasis":"highlighted"}}
+            },
+            {"id":"paused","label":"paused","change":"added","emphasis":"faded","when":{"pause":{"emphasis":"highlighted"}}},
+            {"id":"canceled","label":"canceled","emphasis":"faded","when":{"cancel":{"emphasis":"highlighted"},"dunning":{"emphasis":"highlighted"}}}
           ],
           "edges": [
-            {"from":"trial","to":"active","label":"first charge","in":["happy"]},
-            {"from":"active","to":"pastdue","label":"charge failed","in":["dunning"]},
-            {"from":"pastdue","to":"active","label":"retry ok","in":["dunning"]},
-            {"from":"pastdue","to":"unpaid","label":"3 retries","in":["dunning"]},
-            {"from":"active","to":"canceled","label":"user cancels","in":["cancel"]},
-            {"from":"trial","to":"canceled","label":"trial ends","in":["cancel"]},
-            {"from":"active","to":"paused","label":"pause","in":["pause"],"change":"added"},
-            {"from":"paused","to":"active","label":"resume","in":["pause"],"change":"added"}
+            {"from":"trial","to":"active","label":"first charge","emphasis":"faded","when":{"happy":{"emphasis":"highlighted"}}},
+            {"from":"active","to":"pastdue","label":"charge failed","emphasis":"faded","when":{"dunning":{"emphasis":"highlighted"}}},
+            {"from":"pastdue","to":"active","label":"retry ok","emphasis":"faded","when":{"dunning":{"emphasis":"highlighted"}}},
+            {"from":"pastdue","to":"unpaid","label":"3 retries","emphasis":"faded","when":{"dunning":{"emphasis":"highlighted"}}},
+            {"from":"active","to":"canceled","label":"user cancels","emphasis":"faded","when":{"cancel":{"emphasis":"highlighted"}}},
+            {"from":"trial","to":"canceled","label":"trial ends","emphasis":"faded","when":{"cancel":{"emphasis":"highlighted"}}},
+            {"from":"active","to":"paused","label":"pause","change":"added","emphasis":"faded","when":{"pause":{"emphasis":"highlighted"}}},
+            {"from":"paused","to":"active","label":"resume","change":"added","emphasis":"faded","when":{"pause":{"emphasis":"highlighted"}}}
           ]
         }
       ]
@@ -496,9 +543,9 @@ export default [
     "situation": "O produto vai passar de contas individuais para organizações com vários membros. O agente propõe o novo modelo e as migrações.",
     "why": "Um diagrama de entidades com o diff marcado mostra de uma vez o que nasce, o que muda e que relações passam a existir.",
     "shows": "As entidades com campos adicionados e alterados, e a sequência de migrações para aprovar uma a uma.",
-    "interaction": "Cada migração destaca as tabelas que toca.",
+    "interaction": "O passo a passo percorre as migrações e destaca as tabelas que cada uma toca.",
     "sources": ["schema atual","leitura dos models"],
-    "mechanisms": ["marcadores `change`","destaque ligado"],
+    "mechanisms": ["marcadores `change`","passo a passo"],
     "tool": "present_decision",
     "args": {
       "title": "Organisations data model",
@@ -527,16 +574,22 @@ export default [
           "id": "migrations",
           "label": "Migrations, in order",
           "items": [
-            {"id":"m1","label":"Create organisations and memberships","refs":["orgs","members"],"meta":"additive"},
-            {"id":"m2","label":"Backfill: one personal organisation per user","refs":["orgs","members","users"],"meta":"~40k rows"},
-            {"id":"m3","label":"Add projects.org_id and backfill from owner","refs":["projects"],"meta":"additive"},
-            {"id":"m4","label":"Drop projects.owner_id","refs":["projects"],"meta":"destructive","change":"removed"}
+            {"id":"m1","label":"Create organisations and memberships","meta":"additive"},
+            {"id":"m2","label":"Backfill: one personal organisation per user","meta":"~40k rows"},
+            {"id":"m3","label":"Add projects.org_id and backfill from owner","meta":"additive"},
+            {"id":"m4","label":"Drop projects.owner_id","meta":"destructive","change":"removed"}
           ]
         }
       ],
-      "response": {"type":"approve","of":"migrations"}
+      "response": {"type":"approve","of":"migrations"},
+      "walkthrough": [
+        {"text":"Create organisations and memberships (additive).","focus":["m1","orgs","members"]},
+        {"text":"Backfill: one personal organisation per user (~40k rows).","focus":["m2","orgs","members","users"]},
+        {"text":"Add projects.org_id and backfill from owner (additive).","focus":["m3","projects"]},
+        {"text":"Drop projects.owner_id (destructive).","focus":["m4","projects"]}
+      ]
     },
-    "sample": {"hover":"m3","picks":{"m1":"ok","m2":"ok","m3":"ok","m4":"no"},"note":"keep projects.owner_id for one release"}
+    "sample": {"step":2,"picks":{"m1":"ok","m2":"ok","m3":"ok","m4":"no"},"note":"keep projects.owner_id for one release"}
   },
   {
     "slug": "api-contract",
@@ -547,7 +600,7 @@ export default [
     "shows": "Um diagrama de sequência com lentes para o caminho de sucesso e o de pagamento recusado.",
     "interaction": "Alternar a lente mostra quais mensagens existem em cada caminho.",
     "sources": ["docs do provedor","leitura do código"],
-    "mechanisms": ["lentes","perguntar sobre isto"],
+    "mechanisms": ["estados (lentes)","perguntar sobre isto"],
     "tool": "present_view",
     "args": {
       "title": "Payment flow with the new provider",
@@ -563,11 +616,11 @@ export default [
             {"from":"pay","to":"psp","label":"POST /intents"},
             {"from":"psp","to":"pay","label":"201 intent (pending)","reply":true},
             {"from":"api","to":"client","label":"202 { orderId, status: pending }","reply":true},
-            {"from":"psp","to":"pay","label":"webhook: intent.succeeded","in":["ok"]},
-            {"from":"pay","to":"api","label":"markPaid(orderId)","in":["ok"]},
-            {"from":"psp","to":"pay","label":"webhook: intent.failed","in":["declined"]},
-            {"from":"pay","to":"api","label":"markFailed(orderId, reason)","in":["declined"]},
-            {"from":"api","to":"api","label":"release stock","in":["declined"]}
+            {"from":"psp","to":"pay","label":"webhook: intent.succeeded","emphasis":"faded","when":{"ok":{"emphasis":"highlighted"}}},
+            {"from":"pay","to":"api","label":"markPaid(orderId)","emphasis":"faded","when":{"ok":{"emphasis":"highlighted"}}},
+            {"from":"psp","to":"pay","label":"webhook: intent.failed","emphasis":"faded","when":{"declined":{"emphasis":"highlighted"}}},
+            {"from":"pay","to":"api","label":"markFailed(orderId, reason)","emphasis":"faded","when":{"declined":{"emphasis":"highlighted"}}},
+            {"from":"api","to":"api","label":"release stock","emphasis":"faded","when":{"declined":{"emphasis":"highlighted"}}}
           ]
         }
       ]
@@ -629,7 +682,7 @@ export default [
     "situation": "O usuário pediu para renomear um campo. O agente descobre que a mudança atravessa API pública, eventos e um job de exportação.",
     "why": "\"Afeta 14 arquivos\" não diz nada; ver quais módulos mudam e quais são afetados indiretamente mostra o risco real.",
     "shows": "O grafo de módulos com o que muda e o que é afetado, e a árvore dos arquivos tocados.",
-    "interaction": "Focar um módulo destaca os arquivos dele na árvore.",
+    "interaction": "Cada arquivo tem o id do módulo a que pertence: focar um módulo destaca o arquivo dele na árvore, e vice-versa.",
     "sources": ["busca por referências","grafo de imports"],
     "mechanisms": ["marcadores `change`","destaque ligado"],
     "tool": "present_decision",
@@ -664,20 +717,12 @@ export default [
           "label": "Files",
           "nodes": [
             {"id":"root","label":"src/"},
-            {"id":"f-model","label":"models/user.ts","change":"changed","refs":["model"],"meta":"+6 −6","parent":"root"},
-            {"id":"f-mig","label":"migrations/2026_11_rename_email.sql","change":"added","refs":["model"],"meta":"+9","parent":"root"},
-            {"id":"f-auth","label":"auth/ (4 files)","change":"changed","refs":["auth"],"meta":"+11 −11","parent":"root"},
-            {"id":"f-api","label":"api/v2/users.ts","change":"changed","refs":["api"],"meta":"+3 −3","note":"response shape changes","parent":"root"},
-            {
-              "id": "f-ev",
-              "label": "events/user-updated.ts",
-              "change": "changed",
-              "refs": ["events"],
-              "meta": "+2 −2",
-              "note": "payload changes",
-              "parent": "root"
-            },
-            {"id":"f-exp","label":"jobs/crm-export.ts","change":"affected","refs":["export"],"note":"reads payload.email","parent":"root"}
+            {"id":"model","label":"models/user.ts","change":"changed","meta":"+6 −6","parent":"root"},
+            {"id":"f-mig","label":"migrations/2026_11_rename_email.sql","change":"added","meta":"+9","parent":"root"},
+            {"id":"auth","label":"auth/ (4 files)","change":"changed","meta":"+11 −11","parent":"root"},
+            {"id":"api","label":"api/v2/users.ts","change":"changed","meta":"+3 −3","note":"response shape changes","parent":"root"},
+            {"id":"events","label":"events/user-updated.ts","change":"changed","meta":"+2 −2","note":"payload changes","parent":"root"},
+            {"id":"export","label":"jobs/crm-export.ts","change":"affected","note":"reads payload.email","parent":"root"}
           ]
         }
       ],
@@ -805,7 +850,7 @@ export default [
     "situation": "Antes de um lançamento, o agente levanta os riscos e propõe mitigações. O usuário decide quais tratar antes de ir para produção.",
     "why": "A matriz probabilidade × impacto é uma convenção conhecida; ligada à lista de mitigações, mostra o que cada ação tira da zona vermelha.",
     "shows": "A matriz de risco com os riscos posicionados e a lista de riscos com a mitigação proposta.",
-    "interaction": "Focar um risco na lista destaca a célula dele na matriz.",
+    "interaction": "A célula e o item da lista têm o mesmo id: focar um risco destaca a célula dele na matriz.",
     "sources": ["leitura do código","plano de rollout"],
     "mechanisms": ["destaque ligado","resposta `choose_many`"],
     "tool": "present_decision",
@@ -818,13 +863,9 @@ export default [
           "type": "matrix",
           "columns": [{"id":"low","label":"Impact: low"},{"id":"med","label":"Impact: medium"},{"id":"high","label":"Impact: high"}],
           "rows": [
-            {"id":"p-high","label":"Likelihood: high","cells":[{"v":"","heat":2},{"v":"R4","heat":4,"refs":["r4"]},{"v":"R1","heat":5,"refs":["r1"]}]},
-            {
-              "id": "p-med",
-              "label": "Likelihood: medium",
-              "cells": [{"v":"R5","heat":1,"refs":["r5"]},{"v":"","heat":2},{"v":"R2","heat":4,"refs":["r2"]}]
-            },
-            {"id":"p-low","label":"Likelihood: low","cells":[{"v":"","heat":0},{"v":"R3","heat":1,"refs":["r3"]},{"v":"","heat":2}]}
+            {"id":"p-high","label":"Likelihood: high","cells":[{"v":"","heat":2},{"id":"r4","v":"R4","heat":4},{"id":"r1","v":"R1","heat":5}]},
+            {"id":"p-med","label":"Likelihood: medium","cells":[{"id":"r5","v":"R5","heat":1},{"v":"","heat":2},{"id":"r2","v":"R2","heat":4}]},
+            {"id":"p-low","label":"Likelihood: low","cells":[{"v":"","heat":0},{"id":"r3","v":"R3","heat":1},{"v":"","heat":2}]}
           ]
         },
         {
@@ -891,7 +932,7 @@ export default [
           "nodes": [
             {"id":"sym","label":"502 from the load balancer, 02:00–02:20 UTC"},
             {"id":"h1","label":"Pod restarts during node autoscaling","meta":"unlikely · 10 min to test","parent":"sym"},
-            {"id":"h1a","label":"No scale events in the window on 5 of 7 days","status":"fail","parent":"h1"},
+            {"id":"h1a","label":"No scale events in the window on 5 of 7 days","status":"failed","parent":"h1"},
             {"id":"h2","label":"Connection pool exhausted by the export job","meta":"likely · 20 min to test","parent":"sym"},
             {"id":"h2a","label":"Nightly CRM export starts at 02:00","status":"ok","parent":"h2"},
             {"id":"h2b","label":"pg pool max is 10; export opens 8 connections","status":"ok","parent":"h2"},
@@ -950,7 +991,7 @@ export default [
               "label": "checkout-api",
               "phases": [
                 {"id":"c-ok","label":"healthy","start":0,"duration":18,"status":"ok"},
-                {"id":"c-err","label":"5xx 22%","start":18,"duration":24,"status":"fail"},
+                {"id":"c-err","label":"5xx 22%","start":18,"duration":24,"status":"failed"},
                 {"id":"c-ok2","label":"healthy","start":42,"duration":18,"status":"ok"}
               ]
             },
@@ -967,7 +1008,7 @@ export default [
           ],
           "events": [
             {"id":"e-deploy","at":11,"track":"payments","label":"deploy v3.41"},
-            {"id":"e-alert","at":21,"track":"checkout","label":"alert fired","status":"fail"},
+            {"id":"e-alert","at":21,"track":"checkout","label":"alert fired","status":"failed"},
             {"id":"e-rollback","at":40,"track":"payments","label":"rollback"}
           ]
         }
@@ -994,7 +1035,7 @@ export default [
     "situation": "O usuário pede \"dá uma olhada nos erros de hoje\". O agente consulta os logs e encontra um agrupamento que não aparece lendo linha a linha.",
     "why": "Um mapa de calor serviço × tempo revela concentração e propagação; a lista de evidências ancora a leitura em linhas de log reais.",
     "shows": "O mapa de calor de erros por serviço e janela de tempo, e as evidências que sustentam a conclusão do agente.",
-    "interaction": "Cada evidência destaca a linha do serviço correspondente; clicar numa célula pergunta sobre aquele intervalo.",
+    "interaction": "Cada evidência tem o id do serviço de que fala: focar uma destaca a linha do serviço; clicar numa célula pergunta sobre aquele intervalo.",
     "sources": ["logs (MCP do ELK)"],
     "mechanisms": ["destaque ligado","perguntar sobre isto"],
     "needs": ["filtro por tempo (para volumes maiores)"],
@@ -1079,22 +1120,19 @@ export default [
           "label": "Evidence",
           "items": [
             {
-              "id": "ev1",
+              "id": "search",
               "label": "search: circuit breaker opens on Elasticsearch at 10:58",
-              "detail": "10:58:14 ERROR es-client CircuitBreakingException: [parent] Data too large",
-              "refs": ["search"]
+              "detail": "10:58:14 ERROR es-client CircuitBreakingException: [parent] Data too large"
             },
             {
-              "id": "ev2",
+              "id": "catalog",
               "label": "catalog-api: timeouts calling search, no fallback",
-              "detail": "11:02:40 ERROR catalog SearchClient timeout after 3000ms GET /search?q=…",
-              "refs": ["catalog"]
+              "detail": "11:02:40 ERROR catalog SearchClient timeout after 3000ms GET /search?q=…"
             },
             {
-              "id": "ev3",
+              "id": "web",
               "label": "web: category pages fail server-side rendering",
-              "detail": "11:03:05 ERROR ssr CategoryPage upstream 504 from catalog-api",
-              "refs": ["web"]
+              "detail": "11:03:05 ERROR ssr CategoryPage upstream 504 from catalog-api"
             }
           ],
           "mono": true

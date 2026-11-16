@@ -82,15 +82,39 @@ A view is `title`, optional `context`, and 1–4 **blocks**. Blocks are named af
 | `board` | cards in columns | sprint board |
 | `chart` | bar or line series | before/after measurements |
 
-**Markers** are accepted on any element: `in` (lens ids it belongs to), `refs` (ids of related elements), `change` (`added`, `removed`, `changed`, `affected`), `status` (`ok`, `fail`, `running`, `warn`, `pending`), `note`. A diff, a blast radius or a pipeline status is a graph, tree or matrix with markers.
+### Properties and states
 
-**Ids are global in a view.** The same id in two blocks means the same thing, which is what links the highlight across blocks.
+Any element of any block takes three properties and a note:
 
-**Interaction** is declared, never coded:
+| Property | Values |
+|---|---|
+| `change` | `added`, `removed`, `changed`, `affected` |
+| `status` | `ok`, `warn`, `failed`, `pending`, `running`, `blocked`, `skipped` |
+| `emphasis` | `normal`, `highlighted`, `faded` |
+| `note` | one short line |
 
-- **Linked highlight**: hovering an element lights up everything sharing its id or connected by `refs`.
-- **Lenses**: `lenses[{id, label}]` plus `in` on elements. The user switches perspective; the rest dims. Each card is also a lens when a lens has its id.
-- **Walkthrough**: `walkthrough[{text, focus[]}]`. The user steps through; the view follows.
+A diff, a blast radius or a pipeline status is a graph, tree or matrix with these properties.
+
+A view has named **states**: its `lenses` and the items of its `cards` blocks. When states are in use, the view is always in one of them: the recommended card, otherwise the first state. The user switches by clicking a lens, or by choosing or hovering a card.
+
+`when` says what differs in a state. The value outside `when` applies in every other state.
+
+```json
+{ "id": "db", "label": "Postgres", "status": "ok",
+  "when": { "polling": { "status": "warn", "note": "10x the read load" } } }
+```
+
+An element that belongs to one option only is faded by default and highlighted in that option:
+
+```json
+{ "id": "gateway", "label": "WS gateway", "emphasis": "faded",
+  "when": { "websocket": { "emphasis": "highlighted", "change": "added" } } }
+```
+
+That is the only relation the agent declares. The rest of the interaction needs no declaration, or one field:
+
+- **Ids are global.** The same id in two blocks means the same thing: hovering one highlights the others. A tradeoff item or a timeline track that carries a card's id is that option, and is highlighted while the option is the state.
+- **Walkthrough**: `walkthrough[{text, state?, focus?}]`. A step may switch the state and spotlight some ids; the user steps through and the view follows.
 - **Ask about this**: in a `present_view`, clicking an element sends a question about it to the chat.
 
 **Responses** (`present_decision` only): `response: { type, of?, depth? }`.
@@ -105,7 +129,7 @@ A view is `title`, optional `context`, and 1–4 **blocks**. Blocks are named af
 
 `depth` selects the answerable level when the block is a tree.
 
-The server checks every call for dangling references (unknown ids in edges, scores, `focus`, `response.of`, wrong cell counts, …) and returns the list to the model instead of showing a broken view.
+The server checks every call for dangling references (unknown ids in edges, scores, `focus`, `response.of`, `when` keys that are not states, wrong cell counts, …) and returns the list to the model instead of showing a broken view.
 
 The schema is in [shared/schema.ts](shared/schema.ts); the reference checks in [shared/lint.ts](shared/lint.ts).
 
@@ -172,6 +196,7 @@ Things to look at: the view fits the chat width, dark theme, the answer arrives 
 ```
 shared/schema.ts     zod schemas, shared by server and view
 shared/lint.ts       reference checks, shared by server, view tests and docs
+shared/state.ts      states: what an element is while a state is active
 shared/present.ts    what a present_* call returns to the model; shared by server and playground
 server/index.ts      MCP server (stdio)
 ui/src/model.ts      pure logic: highlight, picks, answer messages
